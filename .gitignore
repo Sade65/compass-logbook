@@ -1,0 +1,6 @@
+# Personal app data
+data/*.csv
+exports/*.txt
+
+# Keep sample/demo datasets
+!data/sample_*.csv
