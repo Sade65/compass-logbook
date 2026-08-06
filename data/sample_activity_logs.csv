@@ -1,0 +1,4 @@
+id,todo_id,date,task,category,start_time,end_time,duration_minutes,note_type,note,completed,created_at
+session_sample_001,todo_sample_001,2026-08-03,Study SQL joins,Studying,2026-08-03T10:00:00,2026-08-03T10:42:00,42,Observation,Practiced joins and window functions,True,2026-08-03T10:42:00
+session_sample_002,todo_sample_003,2026-08-03,Job application review,Job Applications,2026-08-03T11:00:00,2026-08-03T11:55:00,55,General,Updated CV and tailored application notes,True,2026-08-03T11:55:00
+session_sample_003,,2026-08-03,Break,Break,2026-08-03T12:00:00,2026-08-03T12:18:00,18,Observation,Short walk outside,True,2026-08-03T12:18:00

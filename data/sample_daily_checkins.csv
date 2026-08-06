@@ -1,0 +1,4 @@
+date,wake_up_time,slept_at,medication_at,arrived_at,mood,energy,main_focus,notes,created_at
+2026-08-01,08:15,00:30,09:05,10:00,3,4,SQL study and job applications,Sample note: focused better after coffee,2026-08-01T10:05:00
+2026-08-02,08:45,01:00,09:20,10:30,3,3,German study and admin,Sample note: slower morning but completed admin block,2026-08-02T10:35:00
+2026-08-03,07:55,00:15,08:40,09:45,4,4,Portfolio project sprint,Sample note: strong morning focus,2026-08-03T09:50:00

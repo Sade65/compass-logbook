@@ -1,0 +1,4 @@
+id,date,category,timestamp,note,created_at
+counter_sample_001,2026-08-03,Coffee,2026-08-03T09:20:00,First coffee,2026-08-03T09:20:00
+counter_sample_002,2026-08-03,Medication,2026-08-03T08:40:00,Morning medication,2026-08-03T08:40:00
+counter_sample_003,2026-08-03,Cigarette,2026-08-03T13:15:00,After lunch,2026-08-03T13:15:00

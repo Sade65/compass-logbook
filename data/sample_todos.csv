@@ -1,0 +1,4 @@
+id,date,task,category,planned_minutes,status,created_at
+todo_sample_001,2026-08-03,Study SQL joins,Studying,45,done,2026-08-03T09:55:00
+todo_sample_002,2026-08-03,Reply to messages,Communication,20,open,2026-08-03T10:00:00
+todo_sample_003,2026-08-03,Job application review,Job Applications,60,done,2026-08-03T10:05:00
