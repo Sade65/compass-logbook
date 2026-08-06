@@ -17,6 +17,10 @@ CHECKINS_FILE = DATA_DIR / "daily_checkins.csv"
 TODOS_FILE = DATA_DIR / "todos.csv"
 ACTIVITY_LOGS_FILE = DATA_DIR / "activity_logs.csv"
 
+# add counter logs file for tracking counts of specific events (e.g., cigarettes, medication, coffee)
+COUNTER_LOGS_FILE = DATA_DIR / "counter_logs.csv"
+
+CATEGORIES_FILE = DATA_DIR / "categories.csv"
 
 def append_row(path: Path, row: dict) -> None:
     df = pd.DataFrame([row])
@@ -37,6 +41,60 @@ def generate_id(prefix: str) -> str:
 def get_today_str() -> str:
     return date.today().isoformat()
 
+DEFAULT_CATEGORIES = [
+    "Studying",
+    "Development / Coding",
+    "Job Applications",
+    "Communication",
+    "Phone Call",
+    "Admin",
+    "Uni Research",
+    "Break",
+    "Exercise",
+    "Personal",
+    "Other",
+]
+
+
+def load_categories() -> list[str]:
+    """Load saved categories, falling back to default categories."""
+    categories = DEFAULT_CATEGORIES.copy()
+
+    if CATEGORIES_FILE.exists() and CATEGORIES_FILE.stat().st_size > 0:
+        df = pd.read_csv(CATEGORIES_FILE)
+        if "category" in df.columns:
+            saved_categories = df["category"].dropna().astype(str).tolist()
+            categories.extend(saved_categories)
+
+    # remove duplicates while preserving order
+    unique_categories = []
+    for category in categories:
+        cleaned = category.strip()
+        if cleaned and cleaned not in unique_categories:
+            unique_categories.append(cleaned)
+
+    return unique_categories
+
+
+def save_category_if_new(category: str) -> None:
+    """Save a new custom category if it does not already exist."""
+    cleaned = category.strip()
+
+    if not cleaned:
+        return
+
+    existing_categories = load_categories()
+
+    if cleaned in existing_categories:
+        return
+
+    append_row(
+        CATEGORIES_FILE,
+        {
+            "category": cleaned,
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+        },
+    )
 
 
 st.sidebar.title("🧭 Compass Logbook")
@@ -131,20 +189,23 @@ elif page == "✅ Todos & Timers":
 
     with st.form("add_todo_form"):
         task = st.text_input("Task", placeholder="e.g. Study SQL joins")
-        category = st.selectbox(
+        available_categories = load_categories()
+
+        category_choice = st.selectbox(
             "Category",
-            [
-                "Studying",
-                "Job Applications",
-                "Communication",
-                "Admin",
-                "Uni Research",
-                "Break",
-                "Exercise",
-                "Personal",
-                "Other",
-            ],
+            available_categories + ["Custom"],
         )
+
+        if category_choice == "Custom":
+            custom_category = st.text_input(
+                "Custom category",
+                placeholder="e.g. BWB Interview Prep, German Speaking, Life Admin",
+            )
+            category = custom_category.strip()
+        else:
+            category = category_choice
+
+        
         planned_minutes = st.number_input(
             "Planned minutes",
             min_value=1,
@@ -155,23 +216,27 @@ elif page == "✅ Todos & Timers":
 
         add_todo = st.form_submit_button("Add Todo")
 
-    if add_todo:
-        if task.strip():
-            append_row(
-                TODOS_FILE,
-                {
-                    "id": generate_id("todo"),
-                    "date": get_today_str(),
-                    "task": task.strip(),
-                    "category": category,
-                    "planned_minutes": int(planned_minutes),
-                    "status": "open",
-                    "created_at": datetime.now().isoformat(timespec="seconds"),
-                },
-            )
-            st.success("Todo added.")
-        else:
-            st.warning("Please enter a task name.")
+        if add_todo:
+            if not task.strip():
+                st.warning("Please enter a task name.")
+            elif not category:
+                st.warning("Please choose or enter a category.")
+            else:
+                save_category_if_new(category)
+
+                append_row(
+                    TODOS_FILE,
+                    {
+                        "id": generate_id("todo"),
+                        "date": get_today_str(),
+                        "task": task.strip(),
+                        "category": category,
+                        "planned_minutes": int(planned_minutes),
+                        "status": "open",
+                        "created_at": datetime.now().isoformat(timespec="seconds"),
+                    },
+                )
+                st.success("Todo added.")
 
     st.divider()
 
@@ -302,7 +367,68 @@ elif page == "✅ Todos & Timers":
 
 elif page == "⚡ Quick Log":
     st.header("Quick Log")
-    st.write("Next: one-click logs for cigarettes, medication, coffee, and supplements.")
+    st.caption("One-click timestamp logs for small recurring events.")
+
+    st.subheader("Add Quick Log")
+
+    note = st.text_input(
+        "Optional note",
+        placeholder="e.g. after lunch, morning dose, before study session",
+    )
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    quick_log_options = [
+        ("🚬 Cigarette", "Cigarette", col1),
+        ("💊 Medication", "Medication", col2),
+        ("☕ Coffee", "Coffee", col3),
+        ("💊 Supplement", "Supplement", col4),
+    ]
+
+    for button_label, category, col in quick_log_options:
+        if col.button(button_label, use_container_width=True):
+            now = datetime.now()
+            append_row(
+                COUNTER_LOGS_FILE,
+                {
+                    "id": generate_id("counter"),
+                    "date": get_today_str(),
+                    "category": category,
+                    "timestamp": now.isoformat(timespec="seconds"),
+                    "note": note,
+                    "created_at": now.isoformat(timespec="seconds"),
+                },
+            )
+            st.success(f"{category} logged at {now.strftime('%H:%M')}.")
+
+    st.divider()
+    st.subheader("Today's Quick Logs")
+
+    counter_df = load_csv(COUNTER_LOGS_FILE)
+
+    if counter_df.empty:
+        st.info("No quick logs yet.")
+    else:
+        today_logs = counter_df[counter_df["date"] == get_today_str()].copy()
+
+        if today_logs.empty:
+            st.info("No quick logs for today yet.")
+        else:
+            counts = today_logs["category"].value_counts()
+
+            metric_cols = st.columns(4)
+            metric_cols[0].metric("Cigarettes", int(counts.get("Cigarette", 0)))
+            metric_cols[1].metric("Medication", int(counts.get("Medication", 0)))
+            metric_cols[2].metric("Coffee", int(counts.get("Coffee", 0)))
+            metric_cols[3].metric("Supplements", int(counts.get("Supplement", 0)))
+
+            display_df = today_logs[["timestamp", "category", "note"]].copy()
+            display_df["timestamp"] = pd.to_datetime(display_df["timestamp"]).dt.strftime("%H:%M")
+
+            st.dataframe(
+                display_df.sort_values("timestamp", ascending=False),
+                use_container_width=True,
+            )
 
 elif page == "🧼 Maintenance":
     st.header("Maintenance")
