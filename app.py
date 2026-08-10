@@ -5,7 +5,7 @@ from pathlib import Path
 from datetime import datetime, date, time
 
 st.set_page_config(
-    page_title="Compass Logbook",
+    page_title="Compass",
     page_icon="🧭",
     layout="wide",
 )
@@ -97,7 +97,7 @@ def save_category_if_new(category: str) -> None:
     )
 
 
-st.sidebar.title("🧭 Compass Logbook")
+st.sidebar.title("🧭 Compass")
 st.sidebar.caption("Make invisible time visible.")
 
 page = st.sidebar.radio(
@@ -113,7 +113,7 @@ page = st.sidebar.radio(
     ],
 )
 
-st.title("🧭 Compass Logbook")
+st.title("🧭 Compass")
 st.caption("Make invisible time visible.")
 
 
