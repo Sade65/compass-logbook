@@ -113,6 +113,31 @@ def normalize_time_text(value: str) -> str:
     except ValueError:
         return value
 
+def calculate_sleep_duration_text(slept_at: str, end_at: str) -> str:
+    """Calculate rough sleep/window duration from HH:MM to HH:MM, handling overnight sleep."""
+    slept_at = normalize_time_text(slept_at)
+    end_at = normalize_time_text(end_at)
+
+    if not slept_at or not end_at:
+        return ""
+
+    try:
+        start_dt = datetime.strptime(slept_at, "%H:%M")
+        end_dt = datetime.strptime(end_at, "%H:%M")
+
+        # If wake/got-up time is earlier than sleep time, assume it is next day.
+        if end_dt < start_dt:
+            end_dt = end_dt + pd.Timedelta(days=1)
+
+        total_minutes = int((end_dt - start_dt).total_seconds() / 60)
+        hours = total_minutes // 60
+        minutes = total_minutes % 60
+
+        return f"{hours}h {minutes:02d}m"
+    except Exception:
+        return ""
+
+
 
 def is_valid_time_text(value: str) -> bool:
     """Allow blank values or valid HH:MM time strings."""
@@ -262,12 +287,22 @@ def build_checkin_display_table(df: pd.DataFrame) -> pd.DataFrame:
         + display_df.get("energy", "").astype(str)
     )
 
+    # Prefer got-out-of-bed time for sleep window. Fall back to wake-up time.
+    display_df["sleep_total"] = display_df.apply(
+        lambda row: calculate_sleep_duration_text(
+            row.get("slept_at", ""),
+            row.get("got_out_of_bed_at", "") or row.get("wake_up_time", ""),
+        ),
+        axis=1,
+    )
+
     preferred_cols = [
         "updated",
         "date",
         "slept_at",
         "wake_up_time",
         "got_out_of_bed_at",
+        "sleep_total",
         "medication_at",
         "morning_rituals",
         "arrived_at",
@@ -277,8 +312,22 @@ def build_checkin_display_table(df: pd.DataFrame) -> pd.DataFrame:
     ]
 
     existing_cols = [col for col in preferred_cols if col in display_df.columns]
+    display_df = display_df[existing_cols]
 
-    return display_df[existing_cols]
+    display_df = display_df.rename(
+        columns={
+            "slept_at": "t_sleep",
+            "wake_up_time": "t_wake",
+            "got_out_of_bed_at": "t_got_up",
+            "medication_at": "t_meds",
+            "arrived_at": "t_arrive",
+            "morning_rituals": "rituals",
+            "main_focus": "focus",
+            "mood_energy": "mood/energy",
+        }
+    )
+
+    return display_df
 
 
 def split_csv_text(value: str) -> list[str]:
@@ -349,6 +398,14 @@ if page == "🏠 Dashboard":
             col4.metric("Medication", medication_label)
             col5.metric("Arrival", format_time_or_missing(latest.get("arrived_at", "")))
             col6.metric("Mood / Energy", f'{latest.get("mood", 3)} / {latest.get("energy", 3)}')
+
+            sleep_total = calculate_sleep_duration_text(
+                latest.get("slept_at", ""),
+                latest.get("got_out_of_bed_at", "") or latest.get("wake_up_time", ""),
+            )
+
+            if sleep_total:
+                st.caption(f"Sleep window: {sleep_total}")
 
         else:
             st.info("No check-in saved for today yet.")
@@ -565,6 +622,14 @@ elif page == "📝 Daily Check-In":
             col3.metric("Medication", format_time_or_missing(selected.get("medication_at", "")))
             col4.metric("Arrival", format_time_or_missing(selected.get("arrived_at", "")))
             col5.metric("Mood / Energy", f'{selected.get("mood", 3)} / {selected.get("energy", 3)}')
+
+            sleep_total = calculate_sleep_duration_text(
+                selected.get("slept_at", ""),
+                selected.get("got_out_of_bed_at", "") or selected.get("wake_up_time", ""),
+            )
+
+            if sleep_total:
+                st.caption(f"Sleep window: {sleep_total}")
 
             st.caption(f"Last updated: {format_short_datetime(selected.get('updated_at', selected.get('created_at', '')))}")
 
