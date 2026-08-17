@@ -4,6 +4,14 @@ import pandas as pd
 from pathlib import Path
 from datetime import datetime, date, time
 
+from compass_core.runtime_state import (
+    get_active_timer,
+    get_pending_sessions,
+    remove_pending_session,
+    start_timer,
+    stop_timer,
+)
+
 st.set_page_config(
     page_title="Compass",
     page_icon="🧭",
@@ -26,6 +34,22 @@ def append_row(path: Path, row: dict) -> None:
     df = pd.DataFrame([row])
     header = not path.exists() or path.stat().st_size == 0
     df.to_csv(path, mode="a", index=False, header=header)
+
+
+def append_unique_row(path: Path, row: dict, id_column: str = "id") -> bool:
+    """Append a row only when its identifier is not already persisted."""
+    existing = load_csv(path)
+    row_id = str(row.get(id_column, ""))
+
+    if (
+        not existing.empty
+        and id_column in existing.columns
+        and row_id in existing[id_column].astype(str).values
+    ):
+        return False
+
+    append_row(path, row)
+    return True
 
 
 def load_csv(path: Path) -> pd.DataFrame:
@@ -343,6 +367,106 @@ def split_csv_text(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def set_todo_status(todo_id: str, status: str) -> None:
+    """Persist a Todo status change."""
+    todos_df = load_csv(TODOS_FILE)
+    if todos_df.empty or "id" not in todos_df.columns:
+        return
+
+    todos_df.loc[todos_df["id"] == todo_id, "status"] = status
+    todos_df.to_csv(TODOS_FILE, index=False)
+
+
+def format_added_time(value) -> str:
+    parsed = pd.to_datetime(value, errors="coerce")
+    if pd.isna(parsed):
+        return "time unknown"
+    return parsed.strftime("%H:%M")
+
+
+@st.fragment(run_every="1s")
+def render_today_todos() -> None:
+    """Render today's Todo queue and keep an active timer visually live."""
+    todos_df = load_csv(TODOS_FILE)
+
+    if todos_df.empty:
+        st.info("No todos for today yet. Add one above.")
+        return
+
+    today_todos = todos_df[todos_df["date"] == get_today_str()].copy()
+    if today_todos.empty:
+        st.info("No todos for today yet. Add one above.")
+        return
+
+    if "created_at" in today_todos.columns:
+        today_todos = today_todos.sort_values("created_at", ascending=False)
+
+    active_timer = get_active_timer()
+    activity_options = load_categories()
+
+    for _, todo in today_todos.iterrows():
+        todo_id = str(todo["id"])
+        task_name = str(todo["task"])
+        category_name = str(todo["category"])
+        planned = int(todo["planned_minutes"])
+        status = str(todo["status"])
+        added_time = format_added_time(todo.get("created_at", ""))
+
+        if category_name not in activity_options:
+            activity_options_for_todo = [category_name] + activity_options
+        else:
+            activity_options_for_todo = activity_options
+
+        with st.container(border=True):
+            col1, col2, col3, col4 = st.columns([4.4, 1.7, 2.2, 1.4])
+
+            col1.markdown(f"**{task_name}**")
+            col1.caption(
+                f"{category_name} · planned {planned} min · added {added_time}"
+            )
+            col2.write(f"Status: `{status}`")
+
+            is_active = (
+                active_timer is not None
+                and str(active_timer.get("todo_id")) == todo_id
+            )
+
+            if is_active:
+                start_time = datetime.fromisoformat(active_timer["start_time"])
+                elapsed_minutes = (datetime.now() - start_time).total_seconds() / 60
+                col3.metric("Running", f"{elapsed_minutes:.1f} min")
+                col1.caption(
+                    f"Current activity: {active_timer.get('activity_type', category_name)}"
+                )
+
+                if col4.button("Stop", key=f"stop_{todo_id}", type="primary"):
+                    stop_timer()
+                    st.rerun()
+            else:
+                default_index = activity_options_for_todo.index(category_name)
+                activity_type = col3.selectbox(
+                    "Start as",
+                    activity_options_for_todo,
+                    index=default_index,
+                    key=f"activity_type_{todo_id}",
+                )
+
+                if col4.button("Start", key=f"start_{todo_id}"):
+                    if get_active_timer() is not None:
+                        st.warning("Another timer is already running. Stop it first.")
+                    else:
+                        if status == "done":
+                            set_todo_status(todo_id, "open")
+
+                        start_timer(
+                            todo_id=todo_id,
+                            task=task_name,
+                            todo_category=category_name,
+                            activity_type=activity_type,
+                        )
+                        st.rerun()
+
+
 st.sidebar.title("🧭 Compass")
 st.sidebar.caption("Make invisible time visible.")
 
@@ -361,12 +485,6 @@ page = st.sidebar.radio(
 
 st.title("🧭 Compass")
 st.caption("Make invisible time visible.")
-
-
-# timer session state initialization
-if "active_timer" not in st.session_state:
-    st.session_state.active_timer = None
-
 
 
 if page == "🏠 Dashboard":
@@ -674,7 +792,7 @@ elif page == "✅ Todos & Timers":
 
     st.subheader("Add Todo")
 
-    with st.form("add_todo_form"):
+    with st.form("add_todo_form", clear_on_submit=True):
         task = st.text_input("Task", placeholder="e.g. Study SQL joins")
         available_categories = load_categories()
 
@@ -692,7 +810,6 @@ elif page == "✅ Todos & Timers":
         else:
             category = category_choice
 
-        
         planned_minutes = st.number_input(
             "Planned minutes",
             min_value=1,
@@ -723,76 +840,34 @@ elif page == "✅ Todos & Timers":
                         "created_at": datetime.now().isoformat(timespec="seconds"),
                     },
                 )
-                st.success("Todo added.")
+                st.success("Todo added ✓")
 
     st.divider()
-
     st.subheader("Today's Todos")
+    render_today_todos()
 
-    todos_df = load_csv(TODOS_FILE)
-    today_todos = pd.DataFrame()
-
-    if not todos_df.empty:
-        today_todos = todos_df[todos_df["date"] == get_today_str()].copy()
-
-    if today_todos.empty:
-        st.info("No todos for today yet. Add one above.")
-    else:
-        for _, todo in today_todos.iterrows():
-            todo_id = todo["id"]
-            task_name = todo["task"]
-            category_name = todo["category"]
-            planned = int(todo["planned_minutes"])
-            status = todo["status"]
-
-            with st.container(border=True):
-                col1, col2, col3, col4 = st.columns([4, 2, 2, 2])
-
-                col1.markdown(f"**{task_name}**")
-                col1.caption(f"{category_name} · planned {planned} min")
-                col2.write(f"Status: `{status}`")
-
-                active_timer = st.session_state.active_timer
-                is_active = active_timer is not None and active_timer["todo_id"] == todo_id
-
-                if is_active:
-                    start_time = datetime.fromisoformat(active_timer["start_time"])
-                    elapsed_minutes = (datetime.now() - start_time).total_seconds() / 60
-                    col3.metric("Running", f"{elapsed_minutes:.1f} min")
-
-                    if col4.button("Stop", key=f"stop_{todo_id}", type="primary"):
-                        st.session_state.stop_todo_id = todo_id
-                        st.session_state.stop_task_name = task_name
-                        st.session_state.stop_category = category_name
-                        st.session_state.stop_start_time = active_timer["start_time"]
-                        st.session_state.active_timer = None
-                        st.rerun()
-                else:
-                    if col4.button("Start", key=f"start_{todo_id}"):
-                        if st.session_state.active_timer is not None:
-                            st.warning("Another timer is already running. Stop it first.")
-                        else:
-                            st.session_state.active_timer = {
-                                "todo_id": todo_id,
-                                "task": task_name,
-                                "category": category_name,
-                                "start_time": datetime.now().isoformat(timespec="seconds"),
-                            }
-                            st.rerun()
-
-    if "stop_todo_id" in st.session_state:
+    pending_sessions = get_pending_sessions()
+    if pending_sessions:
+        pending = pending_sessions[0]
         st.divider()
         st.subheader("Save Completed Session")
 
-        stop_start = datetime.fromisoformat(st.session_state.stop_start_time)
-        stop_end = datetime.now()
+        stop_start = datetime.fromisoformat(pending["start_time"])
+        stop_end = datetime.fromisoformat(pending["end_time"])
         duration_minutes = round((stop_end - stop_start).total_seconds() / 60, 2)
-
-        st.info(
-            f"Session: {st.session_state.stop_task_name} — {duration_minutes} minutes"
+        activity_type = pending.get(
+            "activity_type", pending.get("todo_category", "Other")
         )
 
-        with st.form("save_session_form"):
+        st.info(
+            f"Session: {pending['task']} · {activity_type} · {duration_minutes} minutes"
+        )
+        if len(pending_sessions) > 1:
+            st.caption(
+                f"{len(pending_sessions) - 1} additional stopped session(s) are waiting to be reviewed."
+            )
+
+        with st.form(f"save_session_form_{pending['session_id']}"):
             note_type = st.selectbox(
                 "Note type",
                 ["General", "Observation", "Idea", "Todo", "Person", "Event"],
@@ -800,21 +875,21 @@ elif page == "✅ Todos & Timers":
             note = st.text_area("Notes", placeholder="What happened during this session?")
             completed = st.radio(
                 "Did you finish the task?",
-                ["Yes, mark done", "No, keep open"],
+                ["No, keep open", "Yes, mark done"],
                 horizontal=True,
             )
 
             save_session = st.form_submit_button("Save Session")
 
         if save_session:
-            append_row(
+            append_unique_row(
                 ACTIVITY_LOGS_FILE,
                 {
-                    "id": generate_id("session"),
-                    "todo_id": st.session_state.stop_todo_id,
-                    "date": get_today_str(),
-                    "task": st.session_state.stop_task_name,
-                    "category": st.session_state.stop_category,
+                    "id": pending["session_id"],
+                    "todo_id": pending["todo_id"],
+                    "date": stop_start.date().isoformat(),
+                    "task": pending["task"],
+                    "category": activity_type,
                     "start_time": stop_start.isoformat(timespec="seconds"),
                     "end_time": stop_end.isoformat(timespec="seconds"),
                     "duration_minutes": duration_minutes,
@@ -826,16 +901,11 @@ elif page == "✅ Todos & Timers":
             )
 
             if completed == "Yes, mark done":
-                todos_df = load_csv(TODOS_FILE)
-                if not todos_df.empty:
-                    todos_df.loc[todos_df["id"] == st.session_state.stop_todo_id, "status"] = "done"
-                    todos_df.to_csv(TODOS_FILE, index=False)
+                set_todo_status(str(pending["todo_id"]), "done")
+            else:
+                set_todo_status(str(pending["todo_id"]), "open")
 
-            del st.session_state.stop_todo_id
-            del st.session_state.stop_task_name
-            del st.session_state.stop_category
-            del st.session_state.stop_start_time
-
+            remove_pending_session(pending["session_id"])
             st.success("Session saved.")
             st.rerun()
 

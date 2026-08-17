@@ -1,8 +1,21 @@
 # Personal app data
 data/*.csv
+data/*.json*
 exports/*.txt
 
 # Keep sample/demo datasets
 !data/sample_*.csv
 .DS_Store
 screenshots/private/
+
+# Python build/cache artifacts
+__pycache__/
+*.py[cod]
+
+
+# Local environments and secrets
+.venv/
+venv/
+source/
+.env
+.env.*
