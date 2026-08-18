@@ -415,6 +415,42 @@ def activity_display_name(category: str) -> str:
     return f"{icon_map.get(normalized, '🏷️')} {category}"
 
 
+def build_activity_log_display(logs: pd.DataFrame, todos_lookup: pd.DataFrame) -> pd.DataFrame:
+    """Build a user-facing activity table while keeping internal IDs out of the UI."""
+    display_logs = logs.copy()
+
+    if not todos_lookup.empty and {"id", "planned_minutes"}.issubset(todos_lookup.columns):
+        planned_lookup = (
+            todos_lookup[["id", "planned_minutes"]]
+            .drop_duplicates(subset=["id"], keep="last")
+            .set_index("id")["planned_minutes"]
+            .to_dict()
+        )
+        display_logs["Planned"] = display_logs["todo_id"].map(planned_lookup)
+    else:
+        display_logs["Planned"] = pd.NA
+
+    start_dt = pd.to_datetime(display_logs["start_time"], errors="coerce")
+    end_dt = pd.to_datetime(display_logs["end_time"], errors="coerce")
+    display_logs["#"] = range(1, len(display_logs) + 1)
+    display_logs["Date"] = pd.to_datetime(
+        display_logs["date"], errors="coerce"
+    ).dt.strftime("%d.%m.%y")
+    display_logs["Time"] = (
+        start_dt.dt.strftime("%H:%M").fillna("?")
+        + " → "
+        + end_dt.dt.strftime("%H:%M").fillna("?")
+    )
+    display_logs["Activity"] = display_logs["category"].map(activity_display_name)
+    display_logs["Actual"] = pd.to_numeric(
+        display_logs["duration_minutes"], errors="coerce"
+    ).round(1)
+
+    display_logs = display_logs.rename(columns={"task": "Task", "note": "Note"})
+    columns = ["#", "Date", "Time", "Activity", "Task", "Planned", "Actual", "Note"]
+    return display_logs[[c for c in columns if c in display_logs.columns]]
+
+
 @st.fragment(run_every="1s")
 def render_today_todos() -> None:
     """Render today's Todo queue and keep an active timer visually live."""
@@ -956,55 +992,45 @@ elif page == "✅ Todos & Timers":
 
     logs_df = load_csv(ACTIVITY_LOGS_FILE)
     if not logs_df.empty:
-        today_logs = logs_df[logs_df["date"] == get_today_str()].copy()
+        todos_lookup = load_csv(TODOS_FILE)
+        today = pd.Timestamp(get_today_str())
+        log_dates = pd.to_datetime(logs_df["date"], errors="coerce")
+
+        today_logs = logs_df[log_dates == today].copy()
         if not today_logs.empty:
-            display_logs = today_logs.tail(10).copy()
-
-            # Add planned duration from the linked Todo while keeping IDs internal.
-            todos_lookup = load_csv(TODOS_FILE)
-            if not todos_lookup.empty and {"id", "planned_minutes"}.issubset(todos_lookup.columns):
-                planned_lookup = (
-                    todos_lookup[["id", "planned_minutes"]]
-                    .drop_duplicates(subset=["id"], keep="last")
-                    .set_index("id")["planned_minutes"]
-                    .to_dict()
-                )
-                display_logs["Planned"] = display_logs["todo_id"].map(planned_lookup)
-            else:
-                display_logs["Planned"] = pd.NA
-
-            start_dt = pd.to_datetime(display_logs["start_time"], errors="coerce")
-            end_dt = pd.to_datetime(display_logs["end_time"], errors="coerce")
-            display_logs["Date"] = pd.to_datetime(
-                display_logs["date"], errors="coerce"
-            ).dt.strftime("%d.%m.%y")
-            display_logs["Time"] = (
-                start_dt.dt.strftime("%H:%M").fillna("?")
-                + " → "
-                + end_dt.dt.strftime("%H:%M").fillna("?")
-            )
-            display_logs["Activity"] = display_logs["category"].map(activity_display_name)
-            display_logs["Actual"] = pd.to_numeric(
-                display_logs["duration_minutes"], errors="coerce"
-            ).round(1)
-
-            display_columns = ["Date", "task", "Activity", "Time", "Planned", "Actual", "note"]
-            display_logs = display_logs[[c for c in display_columns if c in display_logs.columns]]
-            display_logs = display_logs.rename(
-                columns={"task": "Task", "note": "Note"}
-            )
-
+            today_logs = today_logs.sort_values("start_time").tail(20)
+            today_display = build_activity_log_display(today_logs, todos_lookup)
             st.dataframe(
-                display_logs,
+                today_display,
                 use_container_width=True,
                 hide_index=True,
                 column_config={
+                    "#": st.column_config.NumberColumn("#", format="%d"),
                     "Planned": st.column_config.NumberColumn("Planned", format="%d min"),
                     "Actual": st.column_config.NumberColumn("Actual", format="%.1f min"),
                 },
             )
         else:
             st.info("No activity sessions logged today yet.")
+
+        st.subheader("Recent Activity · Previous 5 Days")
+        recent_start = today - pd.Timedelta(days=5)
+        recent_logs = logs_df[(log_dates >= recent_start) & (log_dates < today)].copy()
+        if not recent_logs.empty:
+            recent_logs = recent_logs.sort_values(["date", "start_time"], ascending=[False, False]).head(30)
+            recent_display = build_activity_log_display(recent_logs, todos_lookup)
+            st.dataframe(
+                recent_display,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "#": st.column_config.NumberColumn("#", format="%d"),
+                    "Planned": st.column_config.NumberColumn("Planned", format="%d min"),
+                    "Actual": st.column_config.NumberColumn("Actual", format="%.1f min"),
+                },
+            )
+        else:
+            st.caption("No activity sessions in the previous 5 days.")
     else:
         st.info("No activity sessions logged yet.")
 

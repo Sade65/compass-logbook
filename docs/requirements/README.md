@@ -53,6 +53,8 @@ This register gives every meaningful product, UX, reliability, data, integration
 | CMP-FIX-036 | Todo / Session State Synchronization | Reliability | P0 | Verification | v0.2.0 |
 | CMP-UX-037 | Safe Text Copy / Streamlit Shortcut Mitigation | UX | P2 | Verification | v0.2.0 |
 | CMP-UX-043 | Human-Readable Live Timer | UX | P1 | Verification | v0.2.x |
+| CMP-FEAT-047 | Retroactive Todo / Activity Entry | Feature | P0 | Planned | v0.2.x |
+| CMP-UX-083 | Recent Activity History Table | UX | P1 | Verification | v0.2.x |
 | CMP-UX-082 | Todo Status Visual Hierarchy | UX | P1 | Verification | v0.2.x |
 
 ## Traceability convention
