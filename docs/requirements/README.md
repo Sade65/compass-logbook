@@ -22,7 +22,7 @@ This register gives every meaningful product, UX, reliability, data, integration
 | CMP-FEAT-005 | Todo Action Controls | Feature | P1 | Planned | v0.2.x |
 | CMP-ARCH-006 | Multi-Session Todo Model | Architecture | P0 | In Progress | v0.2.0 |
 | CMP-ANL-007 | Daily Activity Time Breakdown | Analytics | P1 | Planned | v0.2.x |
-| CMP-UX-008 | Activity Log Information Hierarchy | UX | P1 | Planned | v0.2.x |
+| CMP-UX-008 | Activity Log Information Hierarchy | UX | P1 | Verification | v0.2.x |
 | CMP-FEAT-009 | Planned vs Actual Duration | Feature | P1 | Planned | v0.2.x |
 | CMP-FEAT-010 | Timestamped Quick Notes | Feature | P2 | Backlog | v0.3+ |
 | CMP-SEC-011 | Protected Journal | Security | P2 | Backlog | v0.3+ |
@@ -52,6 +52,8 @@ This register gives every meaningful product, UX, reliability, data, integration
 | CMP-FEAT-035 | Per-Session Activity Classification | Feature | P1 | Verification | v0.2.0 |
 | CMP-FIX-036 | Todo / Session State Synchronization | Reliability | P0 | Verification | v0.2.0 |
 | CMP-UX-037 | Safe Text Copy / Streamlit Shortcut Mitigation | UX | P2 | Verification | v0.2.0 |
+| CMP-UX-043 | Human-Readable Live Timer | UX | P1 | Verification | v0.2.x |
+| CMP-UX-082 | Todo Status Visual Hierarchy | UX | P1 | Verification | v0.2.x |
 
 ## Traceability convention
 

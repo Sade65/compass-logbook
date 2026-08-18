@@ -384,6 +384,37 @@ def format_added_time(value) -> str:
     return parsed.strftime("%H:%M")
 
 
+def format_live_timer(start_time: datetime) -> tuple[int, int]:
+    """Return elapsed whole minutes and seconds for a running timer."""
+    elapsed_seconds = max(0, int((datetime.now() - start_time).total_seconds()))
+    minutes, seconds = divmod(elapsed_seconds, 60)
+    return minutes, seconds
+
+
+def activity_display_name(category: str) -> str:
+    """Return a compact, scan-friendly label without changing stored data."""
+    normalized = str(category).strip().lower()
+    icon_map = {
+        "communication": "📞",
+        "break": "☕",
+        "development / coding": "💻",
+        "development/coding": "💻",
+        "coding/dev": "💻",
+        "studying": "📚",
+        "study / learning": "📚",
+        "study": "📚",
+        "research": "🔎",
+        "admin": "🗂️",
+        "shopping": "🛒",
+        "personal": "👤",
+        "health / fitness": "🏃",
+        "social": "👥",
+        "travel / commute": "🚉",
+        "other": "•",
+    }
+    return f"{icon_map.get(normalized, '🏷️')} {category}"
+
+
 @st.fragment(run_every="1s")
 def render_today_todos() -> None:
     """Render today's Todo queue and keep an active timer visually live."""
@@ -418,13 +449,7 @@ def render_today_todos() -> None:
             activity_options_for_todo = activity_options
 
         with st.container(border=True):
-            col1, col2, col3, col4 = st.columns([4.4, 1.7, 2.2, 1.4])
-
-            col1.markdown(f"**{task_name}**")
-            col1.caption(
-                f"{category_name} · planned {planned} min · added {added_time}"
-            )
-            col2.write(f"Status: `{status}`")
+            status_col, task_col, action_col, button_col = st.columns([1.25, 4.3, 2.2, 1.1])
 
             is_active = (
                 active_timer is not None
@@ -432,26 +457,43 @@ def render_today_todos() -> None:
             )
 
             if is_active:
+                status_col.markdown("▶️ **RUNNING**")
+            elif status == "done":
+                status_col.markdown("✅ **DONE**")
+            else:
+                status_col.markdown("🟠 **OPEN**")
+
+            task_col.markdown(f"**{task_name}**")
+            task_col.caption(
+                f"{activity_display_name(category_name)} · planned {planned} min · added {added_time}"
+            )
+
+            if is_active:
                 start_time = datetime.fromisoformat(active_timer["start_time"])
-                elapsed_minutes = (datetime.now() - start_time).total_seconds() / 60
-                col3.metric("Running", f"{elapsed_minutes:.1f} min")
-                col1.caption(
-                    f"Current activity: {active_timer.get('activity_type', category_name)}"
+                elapsed_minutes, elapsed_seconds = format_live_timer(start_time)
+                action_col.caption("Running · min:sec")
+                action_col.markdown(
+                    f"<span style='font-size:2.35rem;font-weight:700;line-height:1'>{elapsed_minutes}</span>"
+                    f"<span style='font-size:1.25rem;font-weight:600;color:#9ca3af'>:{elapsed_seconds:02d}</span>",
+                    unsafe_allow_html=True,
+                )
+                task_col.caption(
+                    f"Current activity: {activity_display_name(active_timer.get('activity_type', category_name))}"
                 )
 
-                if col4.button("Stop", key=f"stop_{todo_id}", type="primary"):
+                if button_col.button("Stop", key=f"stop_{todo_id}", type="primary"):
                     stop_timer()
                     st.rerun()
             else:
                 default_index = activity_options_for_todo.index(category_name)
-                activity_type = col3.selectbox(
+                activity_type = action_col.selectbox(
                     "Start as",
                     activity_options_for_todo,
                     index=default_index,
                     key=f"activity_type_{todo_id}",
                 )
 
-                if col4.button("Start", key=f"start_{todo_id}"):
+                if button_col.button("Start", key=f"start_{todo_id}"):
                     if get_active_timer() is not None:
                         st.warning("Another timer is already running. Stop it first.")
                     else:
@@ -916,7 +958,51 @@ elif page == "✅ Todos & Timers":
     if not logs_df.empty:
         today_logs = logs_df[logs_df["date"] == get_today_str()].copy()
         if not today_logs.empty:
-            st.dataframe(today_logs.tail(10), use_container_width=True)
+            display_logs = today_logs.tail(10).copy()
+
+            # Add planned duration from the linked Todo while keeping IDs internal.
+            todos_lookup = load_csv(TODOS_FILE)
+            if not todos_lookup.empty and {"id", "planned_minutes"}.issubset(todos_lookup.columns):
+                planned_lookup = (
+                    todos_lookup[["id", "planned_minutes"]]
+                    .drop_duplicates(subset=["id"], keep="last")
+                    .set_index("id")["planned_minutes"]
+                    .to_dict()
+                )
+                display_logs["Planned"] = display_logs["todo_id"].map(planned_lookup)
+            else:
+                display_logs["Planned"] = pd.NA
+
+            start_dt = pd.to_datetime(display_logs["start_time"], errors="coerce")
+            end_dt = pd.to_datetime(display_logs["end_time"], errors="coerce")
+            display_logs["Date"] = pd.to_datetime(
+                display_logs["date"], errors="coerce"
+            ).dt.strftime("%d.%m.%y")
+            display_logs["Time"] = (
+                start_dt.dt.strftime("%H:%M").fillna("?")
+                + " → "
+                + end_dt.dt.strftime("%H:%M").fillna("?")
+            )
+            display_logs["Activity"] = display_logs["category"].map(activity_display_name)
+            display_logs["Actual"] = pd.to_numeric(
+                display_logs["duration_minutes"], errors="coerce"
+            ).round(1)
+
+            display_columns = ["Date", "task", "Activity", "Time", "Planned", "Actual", "note"]
+            display_logs = display_logs[[c for c in display_columns if c in display_logs.columns]]
+            display_logs = display_logs.rename(
+                columns={"task": "Task", "note": "Note"}
+            )
+
+            st.dataframe(
+                display_logs,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Planned": st.column_config.NumberColumn("Planned", format="%d min"),
+                    "Actual": st.column_config.NumberColumn("Actual", format="%.1f min"),
+                },
+            )
         else:
             st.info("No activity sessions logged today yet.")
     else:

@@ -9,6 +9,9 @@ All notable Compass changes are documented here.
 - Formal requirement register, roadmap, architecture notes, and ADR process.
 
 ### Changed
+- CMP-UX-008 Activity Log now hides internal IDs and uses compact date/time, activity labels, and planned/actual duration.
+- CMP-UX-043 live timers use a familiar minutes:seconds display.
+- CMP-UX-082 Todo states are visually distinct and shown before task details.
 - CMP-UX-002 Todo creation form resets after successful creation.
 - CMP-UX-003 today's Todos are shown newest first.
 - CMP-FEAT-004 Todo cards show when they were added.
