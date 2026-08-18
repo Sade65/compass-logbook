@@ -9,6 +9,7 @@ All notable Compass changes are documented here.
 - Formal requirement register, roadmap, architecture notes, and ADR process.
 
 ### Changed
+- CMP-UX-084 Recent Check-Ins now use compact dates, readable labels, row numbers, and hide the raw dataframe index.
 - CMP-UX-008 Activity Log columns now follow scan order: #, Date, Time, Activity, Task, Planned, Actual, Note.
 - CMP-UX-083 adds a compact activity history for the previous five calendar days.
 - CMP-UX-008 Activity Log now hides internal IDs and uses compact date/time, activity labels, and planned/actual duration.

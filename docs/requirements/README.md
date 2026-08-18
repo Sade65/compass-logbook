@@ -55,6 +55,7 @@ This register gives every meaningful product, UX, reliability, data, integration
 | CMP-UX-043 | Human-Readable Live Timer | UX | P1 | Verification | v0.2.x |
 | CMP-FEAT-047 | Retroactive Todo / Activity Entry | Feature | P0 | Planned | v0.2.x |
 | CMP-UX-083 | Recent Activity History Table | UX | P1 | Verification | v0.2.x |
+| CMP-UX-084 | Recent Check-In Table Readability | UX | P1 | Verification | v0.2.x |
 | CMP-UX-082 | Todo Status Visual Hierarchy | UX | P1 | Verification | v0.2.x |
 
 ## Traceability convention

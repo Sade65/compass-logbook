@@ -292,66 +292,48 @@ def get_current_checkins() -> pd.DataFrame:
 
 
 def build_checkin_display_table(df: pd.DataFrame) -> pd.DataFrame:
-    """Create a cleaner UI table for check-ins."""
-    if df.empty:
-        return df
-
+    """Create a compact, human-readable recent check-in table."""
     display_df = df.copy()
 
-    if "updated_at" in display_df.columns:
-        display_df["updated"] = display_df["updated_at"].apply(format_short_datetime)
-    elif "created_at" in display_df.columns:
-        display_df["updated"] = display_df["created_at"].apply(format_short_datetime)
-    else:
-        display_df["updated"] = ""
+    display_df["#"] = range(1, len(display_df) + 1)
+    display_df["Date"] = pd.to_datetime(
+        display_df.get("date", ""), errors="coerce"
+    ).dt.strftime("%d.%m.%y")
 
-    display_df["mood_energy"] = (
-        display_df.get("mood", "").astype(str)
-        + " / "
-        + display_df.get("energy", "").astype(str)
-    )
-
-    # Prefer got-out-of-bed time for sleep window. Fall back to wake-up time.
-    display_df["sleep_total"] = display_df.apply(
+    display_df["Sleep"] = display_df.get("slept_at", "").apply(format_time_or_missing)
+    display_df["Wake"] = display_df.get("wake_up_time", "").apply(format_time_or_missing)
+    display_df["Got up"] = display_df.get("got_out_of_bed_at", "").apply(format_time_or_missing)
+    display_df["Sleep total"] = display_df.apply(
         lambda row: calculate_sleep_duration_text(
             row.get("slept_at", ""),
             row.get("got_out_of_bed_at", "") or row.get("wake_up_time", ""),
         ),
         axis=1,
     )
-
-    preferred_cols = [
-        "updated",
-        "date",
-        "slept_at",
-        "wake_up_time",
-        "got_out_of_bed_at",
-        "sleep_total",
-        "medication_at",
-        "morning_rituals",
-        "arrived_at",
-        "mood_energy",
-        "main_focus",
-        "notes",
-    ]
-
-    existing_cols = [col for col in preferred_cols if col in display_df.columns]
-    display_df = display_df[existing_cols]
-
-    display_df = display_df.rename(
-        columns={
-            "slept_at": "t_sleep",
-            "wake_up_time": "t_wake",
-            "got_out_of_bed_at": "t_got_up",
-            "medication_at": "t_meds",
-            "arrived_at": "t_arrive",
-            "morning_rituals": "rituals",
-            "main_focus": "focus",
-            "mood_energy": "mood/energy",
-        }
+    display_df["Meds"] = display_df.get("medication_at", "").apply(format_time_or_missing)
+    display_df["Arrived"] = display_df.get("arrived_at", "").apply(format_time_or_missing)
+    display_df["Mood / Energy"] = (
+        display_df.get("mood", "").astype(str)
+        + " / "
+        + display_df.get("energy", "").astype(str)
     )
+    display_df["Rituals"] = display_df.get("morning_rituals", "").replace({"None": "—", "nan": "—"})
+    display_df["Focus"] = display_df.get("main_focus", "").replace({"None": "—", "nan": "—"})
 
-    return display_df
+    columns = [
+        "#",
+        "Date",
+        "Sleep",
+        "Wake",
+        "Got up",
+        "Sleep total",
+        "Meds",
+        "Arrived",
+        "Mood / Energy",
+        "Rituals",
+        "Focus",
+    ]
+    return display_df[[c for c in columns if c in display_df.columns]]
 
 
 def split_csv_text(value: str) -> list[str]:
@@ -608,7 +590,7 @@ if page == "🏠 Dashboard":
 
         st.subheader("Recent Check-Ins")
         recent_display = build_checkin_display_table(current_checkins.head(5))
-        st.dataframe(recent_display, use_container_width=True)
+        st.dataframe(recent_display, use_container_width=True, hide_index=True)
     else:
         st.info("No check-ins yet. Add one in Daily Check-In.")
 
