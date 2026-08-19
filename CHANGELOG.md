@@ -5,13 +5,21 @@ All notable Compass changes are documented here.
 ## [Unreleased]
 
 ### Added
+- CMP-FEAT-047 adds a dedicated **Log past activity** flow for work remembered after the fact, while keeping planned-vs-actual compatibility through a linked closed Todo internally.
+- CMP-FEAT-095 Todo cards surface the latest stop time and show the previous session duration when the same Todo is started again.
+- CMP-FEAT-096 logged session duration can be corrected manually with a numeric − / + control; Compass preserves the original start and recalculates the end time.
+- CMP-FEAT-012 Todo creation now defaults to today and exposes a calendar picker for future dates, with future Todos surfaced in Upcoming.
+- CMP-FEAT-091 Quick Log can time a standalone Break and record an optional break-context note.
 - CMP-FEAT-035 per-session activity classification.
 - Formal requirement register, roadmap, architecture notes, and ADR process.
 
 ### Experimental
+- CMP-UX-092 corrects the Premium UI page/section heading hierarchy for evaluation.
 - CMP-UX-087 introduces a branch-isolated Premium UI v1A baseline for visual A/B evaluation; it does not change Compass Core or persisted data.
 
 ### Changed
+- CMP-UX-093 Todo scheduling uses quick Today / Tomorrow choices and only reveals the full calendar for a custom future date; past work uses the retroactive activity flow instead.
+- CMP-UX-094 activity logs display newest entries first while preserving chronological ordinals, so the first activity remains #1 and later activities retain their true sequence number. Today omits the redundant Date column and shows Actual before Planned.
 - CMP-UX-084 Recent Check-Ins now use compact dates, readable labels, row numbers, and hide the raw dataframe index.
 - CMP-UX-008 Activity Log columns now follow scan order: #, Date, Time, Activity, Task, Planned, Actual, Note.
 - CMP-UX-083 adds a compact activity history for the previous five calendar days.

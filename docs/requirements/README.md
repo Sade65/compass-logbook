@@ -26,7 +26,7 @@ This register gives every meaningful product, UX, reliability, data, integration
 | CMP-FEAT-009 | Planned vs Actual Duration | Feature | P1 | Planned | v0.2.x |
 | CMP-FEAT-010 | Timestamped Quick Notes | Feature | P2 | Backlog | v0.3+ |
 | CMP-SEC-011 | Protected Journal | Security | P2 | Backlog | v0.3+ |
-| CMP-FEAT-012 | Todo Date Assignment | Feature | P1 | Planned | v0.2.x |
+| CMP-FEAT-012 | Todo Date Assignment | Feature | P1 | Verification | v0.2.x |
 | CMP-FEAT-013 | Lifecycle Replacement Tracker | Feature | P1 | Backlog | v0.3+ |
 | CMP-FEAT-014 | Lifecycle Alerts & Due-State UI | Feature | P1 | Backlog | v0.3+ |
 | CMP-ARCH-015 | Lifecycle-to-Todo Automation | Architecture | P1 | Backlog | v0.3+ |
@@ -53,10 +53,16 @@ This register gives every meaningful product, UX, reliability, data, integration
 | CMP-FIX-036 | Todo / Session State Synchronization | Reliability | P0 | Verification | v0.2.0 |
 | CMP-UX-037 | Safe Text Copy / Streamlit Shortcut Mitigation | UX | P2 | Verification | v0.2.0 |
 | CMP-UX-043 | Human-Readable Live Timer | UX | P1 | Verification | v0.2.x |
-| CMP-FEAT-047 | Retroactive Todo / Activity Entry | Feature | P0 | Planned | v0.2.x |
+| CMP-FEAT-047 | Retroactive Past Activity Entry | Feature | P0 | Verification | v0.2.x |
 | CMP-UX-083 | Recent Activity History Table | UX | P1 | Verification | v0.2.x |
 | CMP-UX-084 | Recent Check-In Table Readability | UX | P1 | Verification | v0.2.x |
 | CMP-UX-087 | Premium UI Baseline | UX / Design System | P2 | Experimental | v0.2.x experiment |
+| CMP-FEAT-091 | Quick Break Activity Logging | Feature | P1 | Verification | v0.2.x |
+| CMP-UX-092 | Page / Section Heading Hierarchy | UX | P2 | Verification | v0.2.x experiment |
+| CMP-UX-093 | Compact Todo Date Selection | UX | P1 | Verification | v0.2.x |
+| CMP-UX-094 | Stable-Ordinal Reverse Activity Log | UX | P1 | Verification | v0.2.x |
+| CMP-FEAT-095 | Todo Session Recap Metadata | Feature / UX | P1 | Verification | v0.2.x |
+| CMP-FEAT-096 | Correct Logged Session Duration | Feature | P1 | Verification | v0.2.x |
 | CMP-UX-082 | Todo Status Visual Hierarchy | UX | P1 | Verification | v0.2.x |
 
 ## Traceability convention

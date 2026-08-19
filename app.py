@@ -2,8 +2,9 @@ from os import path
 import streamlit as st
 import pandas as pd
 from pathlib import Path
-from datetime import datetime, date, time
+from datetime import datetime, date, time, timedelta
 
+from compass_core.activity_records import build_retroactive_records, corrected_end_time
 from compass_core.runtime_state import (
     get_active_timer,
     get_pending_sessions,
@@ -77,7 +78,13 @@ st.markdown(
         font-weight: 650 !important;
     }
 
-    h2 {
+    [data-testid="stMainBlockContainer"] h2 {
+        font-size: 1.875rem !important;
+        line-height: 2.25rem !important;
+        font-weight: 650 !important;
+    }
+
+    [data-testid="stMainBlockContainer"] h3 {
         font-size: 1.25rem !important;
         line-height: 1.625rem !important;
         font-weight: 600 !important;
@@ -539,7 +546,69 @@ def activity_display_name(category: str) -> str:
     return str(category).strip()
 
 
-def build_activity_log_display(logs: pd.DataFrame, todos_lookup: pd.DataFrame) -> pd.DataFrame:
+def format_session_duration(minutes_value) -> str:
+    """Format a persisted session duration as a compact minutes/seconds label."""
+    try:
+        total_seconds = max(0, int(round(float(minutes_value) * 60)))
+    except (TypeError, ValueError):
+        return "?"
+
+    minutes, seconds = divmod(total_seconds, 60)
+    if minutes >= 60:
+        hours, minutes = divmod(minutes, 60)
+        if seconds == 0:
+            return f"{hours}h {minutes:02d}m"
+        return f"{hours}h {minutes:02d}m {seconds:02d}s"
+    return f"{minutes}m {seconds:02d}s"
+
+
+def build_todo_session_recaps(logs: pd.DataFrame) -> dict[str, dict]:
+    """Return the latest persisted session recap for each Todo."""
+    if logs.empty or "todo_id" not in logs.columns or "end_time" not in logs.columns:
+        return {}
+
+    recaps = logs.copy()
+    recaps["_end_dt"] = pd.to_datetime(recaps["end_time"], errors="coerce")
+    recaps["_duration"] = pd.to_numeric(
+        recaps.get("duration_minutes"), errors="coerce"
+    )
+    recaps = recaps[recaps["_end_dt"].notna()].sort_values("_end_dt")
+    if recaps.empty:
+        return {}
+
+    latest = recaps.groupby(recaps["todo_id"].astype(str), sort=False).tail(1)
+    return {
+        str(row["todo_id"]): {
+            "last_end": row["_end_dt"],
+            "last_duration": row["_duration"],
+        }
+        for _, row in latest.iterrows()
+        if str(row.get("todo_id", "")).strip() not in ["", "nan", "None"]
+    }
+
+
+def number_activity_rows(logs: pd.DataFrame) -> pd.DataFrame:
+    """Give rows a chronological ordinal while allowing newest-first presentation.
+
+    The first activity in the supplied period remains #1. The newest item can be
+    displayed at the top without being relabeled as #1.
+    """
+    numbered = logs.copy()
+    numbered["_rank_start"] = pd.to_datetime(numbered["start_time"], errors="coerce")
+    sort_columns = ["_rank_start"]
+    if "created_at" in numbered.columns:
+        sort_columns.append("created_at")
+    numbered = numbered.sort_values(sort_columns, na_position="last")
+    numbered["_display_number"] = range(1, len(numbered) + 1)
+    return numbered
+
+
+def build_activity_log_display(
+    logs: pd.DataFrame,
+    todos_lookup: pd.DataFrame,
+    *,
+    include_date: bool = True,
+) -> pd.DataFrame:
     """Build a user-facing activity table while keeping internal IDs out of the UI."""
     display_logs = logs.copy()
 
@@ -556,7 +625,12 @@ def build_activity_log_display(logs: pd.DataFrame, todos_lookup: pd.DataFrame) -
 
     start_dt = pd.to_datetime(display_logs["start_time"], errors="coerce")
     end_dt = pd.to_datetime(display_logs["end_time"], errors="coerce")
-    display_logs["#"] = range(1, len(display_logs) + 1)
+    if "_display_number" in display_logs.columns:
+        display_logs["#"] = pd.to_numeric(
+            display_logs["_display_number"], errors="coerce"
+        ).astype("Int64")
+    else:
+        display_logs["#"] = range(1, len(display_logs) + 1)
     display_logs["Date"] = pd.to_datetime(
         display_logs["date"], errors="coerce"
     ).dt.strftime("%d.%m.%y")
@@ -571,7 +645,10 @@ def build_activity_log_display(logs: pd.DataFrame, todos_lookup: pd.DataFrame) -
     ).round(1)
 
     display_logs = display_logs.rename(columns={"task": "Task", "note": "Note"})
-    columns = ["#", "Date", "Time", "Activity", "Task", "Planned", "Actual", "Note"]
+    columns = ["#"]
+    if include_date:
+        columns.append("Date")
+    columns.extend(["Time", "Activity", "Task", "Actual", "Planned", "Note"])
     return display_logs[[c for c in columns if c in display_logs.columns]]
 
 
@@ -594,6 +671,7 @@ def render_today_todos() -> None:
 
     active_timer = get_active_timer()
     activity_options = load_categories()
+    session_recaps = build_todo_session_recaps(load_csv(ACTIVITY_LOGS_FILE))
 
     for _, todo in today_todos.iterrows():
         todo_id = str(todo["id"])
@@ -602,6 +680,7 @@ def render_today_todos() -> None:
         planned = int(todo["planned_minutes"])
         status = str(todo["status"])
         added_time = format_added_time(todo.get("created_at", ""))
+        session_recap = session_recaps.get(todo_id)
 
         if category_name not in activity_options:
             activity_options_for_todo = [category_name] + activity_options
@@ -624,14 +703,24 @@ def render_today_todos() -> None:
                 status_col.markdown('<span class="cmp-status cmp-status--open"><span class="cmp-status-dot"></span>Open</span>', unsafe_allow_html=True)
 
             task_col.markdown(f"**{task_name}**")
-            task_col.caption(
+            todo_metadata = (
                 f"{activity_display_name(category_name)} · planned {planned} min · added {added_time}"
             )
+            if session_recap is not None:
+                todo_metadata += f" · last stopped {session_recap['last_end'].strftime('%H:%M')}"
+            task_col.caption(todo_metadata)
 
             if is_active:
                 start_time = datetime.fromisoformat(active_timer["start_time"])
                 elapsed_minutes, elapsed_seconds = format_live_timer(start_time)
-                action_col.caption("Running")
+                if session_recap is not None:
+                    action_col.caption(
+                        "Previous session · "
+                        f"{format_session_duration(session_recap['last_duration'])} · "
+                        f"stopped {session_recap['last_end'].strftime('%H:%M')}"
+                    )
+                else:
+                    action_col.caption("Running")
                 action_col.markdown(
                     f"<span class='cmp-timer' style='font-size:2.25rem;font-weight:650;line-height:1'>{elapsed_minutes}</span>"
                     f"<span class='cmp-timer' style='font-size:1.15rem;font-weight:550;color:#707986'>:{elapsed_seconds:02d}</span>",
@@ -678,6 +767,83 @@ def render_today_todos() -> None:
                             activity_type=activity_type,
                         )
                         st.rerun()
+
+
+@st.fragment(run_every="1s")
+def render_quick_break() -> None:
+    """Start/end a standalone Break session using the canonical activity log.
+
+    The current MVP intentionally keeps the single-active-timer rule. If a Todo
+    timer is running, Compass does not start an overlapping Break until the
+    Pause/parallel-timer interaction model has been designed.
+    """
+    active_timer = get_active_timer()
+    is_break = (
+        active_timer is not None
+        and str(active_timer.get("todo_id", "")) == "__quick_break__"
+    )
+
+    if is_break:
+        start_dt = datetime.fromisoformat(active_timer["start_time"])
+        elapsed_minutes, elapsed_seconds = format_live_timer(start_dt)
+        col1, col2, col3 = st.columns([2.3, 1.4, 1.0])
+        col1.markdown("**Break running**")
+        col1.caption(f"Started {start_dt.strftime('%H:%M')}")
+        col2.markdown(
+            f"<span class='cmp-timer' style='font-size:1.8rem;font-weight:650'>{elapsed_minutes}</span>"
+            f"<span class='cmp-timer' style='font-size:1rem;color:#707986'>:{elapsed_seconds:02d}</span>",
+            unsafe_allow_html=True,
+        )
+        break_note = st.text_input(
+            "What did you do during the break? (optional)",
+            key="quick_break_note",
+            placeholder="e.g. bathroom, lunch, spoke to a friend, messages",
+        )
+        if col3.button("End break", type="primary", use_container_width=True):
+            pending = stop_timer()
+            if pending is not None:
+                stop_start = datetime.fromisoformat(pending["start_time"])
+                stop_end = datetime.fromisoformat(pending["end_time"])
+                duration_minutes = round(
+                    (stop_end - stop_start).total_seconds() / 60, 2
+                )
+                append_unique_row(
+                    ACTIVITY_LOGS_FILE,
+                    {
+                        "id": pending["session_id"],
+                        "todo_id": "",
+                        "date": stop_start.date().isoformat(),
+                        "task": "Break",
+                        "category": "Break",
+                        "start_time": stop_start.isoformat(timespec="seconds"),
+                        "end_time": stop_end.isoformat(timespec="seconds"),
+                        "duration_minutes": duration_minutes,
+                        "note_type": "Quick Log",
+                        "note": break_note,
+                        "completed": True,
+                        "created_at": datetime.now().isoformat(timespec="seconds"),
+                    },
+                )
+                remove_pending_session(pending["session_id"])
+                st.success(f"Break logged · {duration_minutes:.1f} min")
+                st.rerun()
+        return
+
+    if active_timer is not None:
+        st.caption(
+            f"A timer is already running: {active_timer.get('task', 'Activity')}. "
+            "Break overlap is intentionally disabled until Pause/parallel timers are defined."
+        )
+        return
+
+    if st.button("Start break", use_container_width=False):
+        start_timer(
+            todo_id="__quick_break__",
+            task="Break",
+            todo_category="Break",
+            activity_type="Break",
+        )
+        st.rerun()
 
 
 st.sidebar.title("Compass")
@@ -1031,6 +1197,27 @@ elif page == "Todos":
             step=5,
         )
 
+        date_mode = st.radio(
+            "When",
+            ["Today", "Tomorrow", "Pick date"],
+            horizontal=True,
+            help="Past work is logged separately below as an activity; Todos represent current or future intention.",
+        )
+        if date_mode == "Today":
+            todo_date = date.today()
+        elif date_mode == "Tomorrow":
+            todo_date = date.today() + timedelta(days=1)
+        else:
+            date_col, _ = st.columns([1.2, 4.8])
+            with date_col:
+                todo_date = st.date_input(
+                    "Date",
+                    value=date.today() + timedelta(days=1),
+                    min_value=date.today(),
+                    format="DD.MM.YYYY",
+                    help="Choose any future date.",
+                )
+
         add_todo = st.form_submit_button("Add Todo")
 
         if add_todo:
@@ -1045,7 +1232,7 @@ elif page == "Todos":
                     TODOS_FILE,
                     {
                         "id": generate_id("todo"),
-                        "date": get_today_str(),
+                        "date": todo_date.isoformat(),
                         "task": task.strip(),
                         "category": category,
                         "planned_minutes": int(planned_minutes),
@@ -1055,9 +1242,127 @@ elif page == "Todos":
                 )
                 st.success("Todo added ✓")
 
+    with st.expander("Log past activity"):
+        st.caption(
+            "For work you already did. Compass records it as historical activity; "
+            "a linked closed Todo is created internally for planned-vs-actual compatibility in v0.2."
+        )
+        with st.form("retroactive_activity_form", clear_on_submit=True):
+            retro_date = st.date_input(
+                "Activity date",
+                value=date.today() - timedelta(days=1),
+                max_value=date.today(),
+                format="DD.MM.YYYY",
+                key="retro_activity_date",
+            )
+            retro_task = st.text_input(
+                "What did you do?",
+                placeholder="e.g. Called repair service",
+                key="retro_activity_task",
+            )
+            retro_categories = load_categories()
+            retro_category_choice = st.selectbox(
+                "Activity",
+                retro_categories + ["Custom"],
+                key="retro_activity_category",
+            )
+            if retro_category_choice == "Custom":
+                retro_custom_category = st.text_input(
+                    "Custom activity",
+                    placeholder="e.g. Comedy Writing",
+                    key="retro_activity_custom_category",
+                )
+                retro_category = retro_custom_category.strip()
+            else:
+                retro_category = retro_category_choice
+
+            retro_planned = st.number_input(
+                "Planned minutes",
+                min_value=0,
+                max_value=1440,
+                value=0,
+                step=5,
+                help="Use 0 if this activity was not planned in advance.",
+                key="retro_activity_planned",
+            )
+            time_col1, time_col2 = st.columns(2)
+            with time_col1:
+                retro_start = st.time_input(
+                    "Start", value=time(12, 0), step=60, key="retro_activity_start"
+                )
+            with time_col2:
+                retro_end = st.time_input(
+                    "End", value=time(12, 30), step=60, key="retro_activity_end"
+                )
+            retro_note = st.text_area(
+                "Note",
+                placeholder="Optional context",
+                key="retro_activity_note",
+            )
+            add_retroactive = st.form_submit_button("Log past activity")
+
+        if add_retroactive:
+            if not retro_task.strip():
+                st.warning("Please describe the activity.")
+            elif not retro_category:
+                st.warning("Please choose or enter an activity type.")
+            else:
+                try:
+                    todo_row, activity_row = build_retroactive_records(
+                        activity_date=retro_date,
+                        task=retro_task.strip(),
+                        category=retro_category,
+                        planned_minutes=int(retro_planned),
+                        start_clock=retro_start,
+                        end_clock=retro_end,
+                        note=retro_note.strip(),
+                    )
+                except ValueError as exc:
+                    st.warning(str(exc))
+                else:
+                    save_category_if_new(retro_category)
+                    append_row(TODOS_FILE, todo_row)
+                    append_unique_row(ACTIVITY_LOGS_FILE, activity_row)
+                    st.success(
+                        f"Past activity logged · {retro_date.strftime('%d.%m.%y')} · "
+                        f"{retro_start.strftime('%H:%M')} → {retro_end.strftime('%H:%M')} ✓"
+                    )
+                    st.rerun()
+
     st.divider()
     st.subheader("Today's Todos")
     render_today_todos()
+
+    todos_for_upcoming = load_csv(TODOS_FILE)
+    if not todos_for_upcoming.empty and "date" in todos_for_upcoming.columns:
+        todo_dates = pd.to_datetime(todos_for_upcoming["date"], errors="coerce")
+        upcoming = todos_for_upcoming[
+            (todo_dates > pd.Timestamp(get_today_str()))
+            & (todos_for_upcoming["status"].astype(str) != "done")
+        ].copy()
+        if not upcoming.empty:
+            upcoming["Date"] = pd.to_datetime(
+                upcoming["date"], errors="coerce"
+            ).dt.strftime("%d.%m.%y")
+            upcoming = upcoming.rename(
+                columns={
+                    "task": "Task",
+                    "category": "Activity",
+                    "planned_minutes": "Planned",
+                }
+            )
+            upcoming = upcoming.sort_values("date").head(12)
+            with st.expander(f"Upcoming · {len(upcoming)} scheduled todo(s)"):
+                st.dataframe(
+                    upcoming[["Date", "Task", "Activity", "Planned"]],
+                    hide_index=True,
+                    use_container_width=True,
+                    column_config={
+                        "Planned": st.column_config.NumberColumn(
+                            "Planned", format="%d min"
+                        )
+                    },
+                )
 
     pending_sessions = get_pending_sessions()
     if pending_sessions:
@@ -1133,8 +1438,11 @@ elif page == "Todos":
 
         today_logs = logs_df[log_dates == today].copy()
         if not today_logs.empty:
-            today_logs = today_logs.sort_values("start_time").tail(20)
-            today_display = build_activity_log_display(today_logs, todos_lookup)
+            today_logs = number_activity_rows(today_logs)
+            today_logs = today_logs.sort_values("_rank_start", ascending=False).head(20)
+            today_display = build_activity_log_display(
+                today_logs, todos_lookup, include_date=False
+            )
             st.dataframe(
                 today_display,
                 use_container_width=True,
@@ -1152,7 +1460,8 @@ elif page == "Todos":
         recent_start = today - pd.Timedelta(days=5)
         recent_logs = logs_df[(log_dates >= recent_start) & (log_dates < today)].copy()
         if not recent_logs.empty:
-            recent_logs = recent_logs.sort_values(["date", "start_time"], ascending=[False, False]).head(30)
+            recent_logs = number_activity_rows(recent_logs)
+            recent_logs = recent_logs.sort_values("_rank_start", ascending=False).head(30)
             recent_display = build_activity_log_display(recent_logs, todos_lookup)
             st.dataframe(
                 recent_display,
@@ -1166,6 +1475,72 @@ elif page == "Todos":
             )
         else:
             st.caption("No activity sessions in the previous 5 days.")
+
+        with st.expander("Correct logged time"):
+            st.caption(
+                "Use this when you stopped a timer late or need to correct the recorded duration. "
+                "Changing Actual keeps the original start time and recalculates the end time."
+            )
+            editable_logs = logs_df.copy()
+            editable_logs["_start_dt"] = pd.to_datetime(
+                editable_logs["start_time"], errors="coerce"
+            )
+            editable_logs = editable_logs.sort_values("_start_dt", ascending=False).head(50)
+            editable_logs = editable_logs[editable_logs["id"].notna()]
+
+            if editable_logs.empty:
+                st.caption("No logged sessions available to edit.")
+            else:
+                session_ids = editable_logs["id"].astype(str).tolist()
+                session_lookup = editable_logs.set_index(editable_logs["id"].astype(str))
+
+                def _session_label(session_id: str) -> str:
+                    row = session_lookup.loc[session_id]
+                    start_dt = pd.to_datetime(row.get("start_time"), errors="coerce")
+                    date_label = start_dt.strftime("%d.%m") if not pd.isna(start_dt) else "?"
+                    time_label = start_dt.strftime("%H:%M") if not pd.isna(start_dt) else "?"
+                    return (
+                        f"{date_label} {time_label} · {row.get('category', 'Other')} · "
+                        f"{row.get('task', 'Activity')}"
+                    )
+
+                selected_session_id = st.selectbox(
+                    "Session", session_ids, format_func=_session_label
+                )
+                selected_row = session_lookup.loc[selected_session_id]
+                current_actual_value = pd.to_numeric(
+                    selected_row.get("duration_minutes"), errors="coerce"
+                )
+                current_actual = (
+                    float(current_actual_value) if not pd.isna(current_actual_value) else 0.0
+                )
+                corrected_minutes = st.number_input(
+                    "Actual minutes",
+                    min_value=0.1,
+                    max_value=1440.0,
+                    value=round(current_actual, 1),
+                    step=1.0,
+                    format="%.1f",
+                    help="Use the − / + controls or type the corrected duration.",
+                    key=f"correct_duration_{selected_session_id}",
+                )
+                if st.button("Save corrected time", key=f"save_duration_{selected_session_id}"):
+                    row_mask = logs_df["id"].astype(str) == selected_session_id
+                    start_value = logs_df.loc[row_mask, "start_time"].iloc[0]
+                    try:
+                        new_end = corrected_end_time(start_value, corrected_minutes)
+                    except ValueError as exc:
+                        st.warning(str(exc))
+                    else:
+                        logs_df.loc[row_mask, "duration_minutes"] = round(
+                            float(corrected_minutes), 2
+                        )
+                        logs_df.loc[row_mask, "end_time"] = new_end
+                        logs_df.to_csv(ACTIVITY_LOGS_FILE, index=False)
+                        st.success(
+                            f"Corrected to {float(corrected_minutes):.1f} min ✓"
+                        )
+                        st.rerun()
     else:
         st.info("No activity sessions logged yet.")
 
@@ -1173,7 +1548,11 @@ elif page == "Quick Log":
     st.header("Quick Log")
     st.caption("One-click timestamp logs for small recurring events.")
 
-    st.subheader("Add Quick Log")
+    st.subheader("Break")
+    render_quick_break()
+
+    st.divider()
+    st.subheader("Timestamp Quick Log")
 
     note = st.text_input(
         "Optional note",
