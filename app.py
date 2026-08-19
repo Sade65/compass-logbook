@@ -18,6 +18,167 @@ st.set_page_config(
     layout="wide",
 )
 
+# Experimental Premium UI baseline (CMP-UX-087).
+# Keep this visual layer separate from Compass Core so it is easy to A/B test or discard.
+st.markdown(
+    """
+    <style>
+    :root {
+        --cmp-bg: #0B0D10;
+        --cmp-sidebar: #0E1116;
+        --cmp-surface-1: #11151B;
+        --cmp-surface-2: #171C24;
+        --cmp-surface-hover: #1B212B;
+        --cmp-border: #252B35;
+        --cmp-border-strong: #343C49;
+        --cmp-text-primary: #F4F6F8;
+        --cmp-text-secondary: #A6AEBA;
+        --cmp-text-muted: #707986;
+        --cmp-accent: #8BA4FF;
+        --cmp-accent-soft: rgba(139, 164, 255, .12);
+        --cmp-success: #54C985;
+        --cmp-warning: #D7A24A;
+        --cmp-danger: #F25F68;
+    }
+
+    html, body, [class*="css"] {
+        font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .stApp {
+        background: var(--cmp-bg);
+        color: var(--cmp-text-primary);
+    }
+
+    [data-testid="stSidebar"] {
+        background: var(--cmp-sidebar);
+        border-right: 1px solid var(--cmp-border);
+        width: 232px !important;
+    }
+
+    [data-testid="stSidebar"] > div:first-child {
+        width: 232px !important;
+    }
+
+    [data-testid="stMainBlockContainer"] {
+        max-width: 1240px;
+        padding-top: 2.25rem;
+        padding-left: 2.5rem;
+        padding-right: 2.5rem;
+    }
+
+    h1, h2, h3 {
+        letter-spacing: -0.02em;
+    }
+
+    h1 {
+        font-size: 1.875rem !important;
+        line-height: 2.25rem !important;
+        font-weight: 650 !important;
+    }
+
+    h2 {
+        font-size: 1.25rem !important;
+        line-height: 1.625rem !important;
+        font-weight: 600 !important;
+    }
+
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        border-color: var(--cmp-border) !important;
+        border-radius: 12px !important;
+        background: var(--cmp-surface-1);
+    }
+
+    div[data-baseweb="select"] > div,
+    [data-testid="stTextInput"] input,
+    [data-testid="stNumberInput"] input,
+    [data-testid="stDateInput"] input,
+    textarea {
+        background: var(--cmp-surface-2) !important;
+        border-color: var(--cmp-border) !important;
+        border-radius: 9px !important;
+    }
+
+    .stButton > button,
+    [data-testid="stFormSubmitButton"] > button {
+        min-height: 40px;
+        border-radius: 9px !important;
+        border-color: var(--cmp-border-strong) !important;
+        transition: background 140ms ease, border-color 140ms ease;
+    }
+
+    .stButton > button:hover,
+    [data-testid="stFormSubmitButton"] > button:hover {
+        border-color: #3A4350 !important;
+    }
+
+    [data-testid="stSidebar"] [role="radiogroup"] label {
+        min-height: 40px;
+        border-radius: 9px;
+        padding: 0 10px;
+        color: var(--cmp-text-secondary);
+        transition: background 140ms ease, color 140ms ease;
+    }
+
+    [data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) {
+        background: var(--cmp-accent-soft);
+        color: var(--cmp-text-primary);
+    }
+
+    .cmp-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 12px;
+        font-weight: 550;
+        color: var(--cmp-text-secondary);
+        white-space: nowrap;
+    }
+
+    .cmp-status-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        background: currentColor;
+        display: inline-block;
+    }
+
+    .cmp-status--open { color: var(--cmp-warning); }
+    .cmp-status--done { color: var(--cmp-success); }
+    .cmp-status--running { color: var(--cmp-accent); }
+
+    @keyframes cmp-breathe {
+        0%, 100% { opacity: .55; }
+        50% { opacity: 1; }
+    }
+
+    .cmp-status--running .cmp-status-dot {
+        animation: cmp-breathe 1.8s ease-in-out infinite;
+    }
+
+    .cmp-page-date {
+        color: var(--cmp-text-muted);
+        font-size: 13px;
+        margin-top: -8px;
+        margin-bottom: 24px;
+    }
+
+    .cmp-over-plan {
+        color: var(--cmp-text-muted);
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+    }
+
+    [data-testid="stMetricValue"],
+    [data-testid="stDataFrame"],
+    .cmp-timer {
+        font-variant-numeric: tabular-nums;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(exist_ok=True)
 
@@ -374,27 +535,8 @@ def format_live_timer(start_time: datetime) -> tuple[int, int]:
 
 
 def activity_display_name(category: str) -> str:
-    """Return a compact, scan-friendly label without changing stored data."""
-    normalized = str(category).strip().lower()
-    icon_map = {
-        "communication": "📞",
-        "break": "☕",
-        "development / coding": "💻",
-        "development/coding": "💻",
-        "coding/dev": "💻",
-        "studying": "📚",
-        "study / learning": "📚",
-        "study": "📚",
-        "research": "🔎",
-        "admin": "🗂️",
-        "shopping": "🛒",
-        "personal": "👤",
-        "health / fitness": "🏃",
-        "social": "👥",
-        "travel / commute": "🚉",
-        "other": "•",
-    }
-    return f"{icon_map.get(normalized, '🏷️')} {category}"
+    """Return the human-readable category name without changing stored data."""
+    return str(category).strip()
 
 
 def build_activity_log_display(logs: pd.DataFrame, todos_lookup: pd.DataFrame) -> pd.DataFrame:
@@ -467,7 +609,7 @@ def render_today_todos() -> None:
             activity_options_for_todo = activity_options
 
         with st.container(border=True):
-            status_col, task_col, action_col, button_col = st.columns([1.25, 4.3, 2.2, 1.1])
+            status_col, task_col, action_col, button_col = st.columns([1.1, 4.7, 2.4, 1.0])
 
             is_active = (
                 active_timer is not None
@@ -475,11 +617,11 @@ def render_today_todos() -> None:
             )
 
             if is_active:
-                status_col.markdown("▶️ **RUNNING**")
+                status_col.markdown('<span class="cmp-status cmp-status--running"><span class="cmp-status-dot"></span>Running</span>', unsafe_allow_html=True)
             elif status == "done":
-                status_col.markdown("✅ **DONE**")
+                status_col.markdown('<span class="cmp-status cmp-status--done"><span class="cmp-status-dot"></span>Done</span>', unsafe_allow_html=True)
             else:
-                status_col.markdown("🟠 **OPEN**")
+                status_col.markdown('<span class="cmp-status cmp-status--open"><span class="cmp-status-dot"></span>Open</span>', unsafe_allow_html=True)
 
             task_col.markdown(f"**{task_name}**")
             task_col.caption(
@@ -489,12 +631,21 @@ def render_today_todos() -> None:
             if is_active:
                 start_time = datetime.fromisoformat(active_timer["start_time"])
                 elapsed_minutes, elapsed_seconds = format_live_timer(start_time)
-                action_col.caption("Running · min:sec")
+                action_col.caption("Running")
                 action_col.markdown(
-                    f"<span style='font-size:2.35rem;font-weight:700;line-height:1'>{elapsed_minutes}</span>"
-                    f"<span style='font-size:1.25rem;font-weight:600;color:#9ca3af'>:{elapsed_seconds:02d}</span>",
+                    f"<span class='cmp-timer' style='font-size:2.25rem;font-weight:650;line-height:1'>{elapsed_minutes}</span>"
+                    f"<span class='cmp-timer' style='font-size:1.15rem;font-weight:550;color:#707986'>:{elapsed_seconds:02d}</span>",
                     unsafe_allow_html=True,
                 )
+                elapsed_total_seconds = elapsed_minutes * 60 + elapsed_seconds
+                planned_seconds = planned * 60
+                if elapsed_total_seconds > planned_seconds:
+                    over_seconds = elapsed_total_seconds - planned_seconds
+                    over_minutes, over_remainder = divmod(over_seconds, 60)
+                    action_col.markdown(
+                        f"<span class='cmp-over-plan'>+{over_minutes}:{over_remainder:02d} over plan</span>",
+                        unsafe_allow_html=True,
+                    )
                 task_col.caption(
                     f"Current activity: {activity_display_name(active_timer.get('activity_type', category_name))}"
                 )
@@ -511,7 +662,9 @@ def render_today_todos() -> None:
                     key=f"activity_type_{todo_id}",
                 )
 
-                if button_col.button("Start", key=f"start_{todo_id}"):
+                start_label = "Start another" if status == "done" else "Start"
+
+                if button_col.button(start_label, key=f"start_{todo_id}"):
                     if get_active_timer() is not None:
                         st.warning("Another timer is already running. Stop it first.")
                     else:
@@ -527,27 +680,24 @@ def render_today_todos() -> None:
                         st.rerun()
 
 
-st.sidebar.title("🧭 Compass")
-st.sidebar.caption("Make invisible time visible.")
+st.sidebar.title("Compass")
 
 page = st.sidebar.radio(
     "Navigation",
     [
-        "🏠 Dashboard",
-        "📝 Daily Check-In",
-        "✅ Todos & Timers",
-        "⚡ Quick Log",
-        "🧼 Maintenance",
-        "📊 Analytics",
-        "📤 Export",
+        "Dashboard",
+        "Daily Check-In",
+        "Todos",
+        "Quick Log",
+        "Maintenance",
+        "Analytics",
+        "Export",
     ],
+    label_visibility="collapsed",
 )
 
-st.title("🧭 Compass")
-st.caption("Make invisible time visible.")
 
-
-if page == "🏠 Dashboard":
+if page == "Dashboard":
     st.header("Dashboard")
 
     current_checkins = get_current_checkins()
@@ -594,7 +744,7 @@ if page == "🏠 Dashboard":
     else:
         st.info("No check-ins yet. Add one in Daily Check-In.")
 
-elif page == "📝 Daily Check-In":
+elif page == "Daily Check-In":
     st.header("Daily Check-In")
 
     selected_date = st.date_input("Date", value=date.today())
@@ -846,11 +996,14 @@ elif page == "📝 Daily Check-In":
                     use_container_width=True,
                 )
 
-elif page == "✅ Todos & Timers":
-    st.header("Todos & Timers")
-    st.caption("Turn today's tasks into trackable time sessions.")
+elif page == "Todos":
+    st.header("Todos")
+    st.markdown(
+        f"<div class='cmp-page-date'>{date.today().strftime('%A, %d %B')}</div>",
+        unsafe_allow_html=True,
+    )
 
-    st.subheader("Add Todo")
+    st.subheader("New todo")
 
     with st.form("add_todo_form", clear_on_submit=True):
         task = st.text_input("Task", placeholder="e.g. Study SQL joins")
@@ -1016,7 +1169,7 @@ elif page == "✅ Todos & Timers":
     else:
         st.info("No activity sessions logged yet.")
 
-elif page == "⚡ Quick Log":
+elif page == "Quick Log":
     st.header("Quick Log")
     st.caption("One-click timestamp logs for small recurring events.")
 
@@ -1081,14 +1234,14 @@ elif page == "⚡ Quick Log":
                 use_container_width=True,
             )
 
-elif page == "🧼 Maintenance":
+elif page == "Maintenance":
     st.header("Maintenance")
     st.write("Next: toothbrush, contact lenses, water filter, and haircut freshness trackers.")
 
-elif page == "📊 Analytics":
+elif page == "Analytics":
     st.header("Analytics")
     st.write("Next: wake-up trend, activity time, and counter charts.")
 
-elif page == "📤 Export":
+elif page == "Export":
     st.header("Export")
     st.write("Next: generate daily text reports.")

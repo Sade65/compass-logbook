@@ -8,6 +8,9 @@ All notable Compass changes are documented here.
 - CMP-FEAT-035 per-session activity classification.
 - Formal requirement register, roadmap, architecture notes, and ADR process.
 
+### Experimental
+- CMP-UX-087 introduces a branch-isolated Premium UI v1A baseline for visual A/B evaluation; it does not change Compass Core or persisted data.
+
 ### Changed
 - CMP-UX-084 Recent Check-Ins now use compact dates, readable labels, row numbers, and hide the raw dataframe index.
 - CMP-UX-008 Activity Log columns now follow scan order: #, Date, Time, Activity, Task, Planned, Actual, Note.

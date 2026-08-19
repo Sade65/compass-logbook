@@ -36,3 +36,6 @@ The authoritative requirement inventory is maintained in `docs/requirements/READ
 - mobile quick logger and multi-client synchronization
 - automation rule engine
 - AI/MCP access layer
+## Experimental design track
+
+- CMP-UX-087 Premium UI Baseline is intentionally isolated from functional work so visual decisions can be accepted, revised, or discarded without changing Compass Core.
