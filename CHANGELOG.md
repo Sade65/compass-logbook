@@ -34,3 +34,10 @@ All notable Compass changes are documented here.
 - CMP-FIX-001 active and stopped-but-unsaved timer state is persisted outside Streamlit session state.
 - CMP-FIX-036 restarting work on a completed Todo reopens it and Stop captures the true end time immediately.
 - CMP-UX-037 Streamlit developer toolbar is hidden in viewer mode to mitigate accidental Clear Cache actions while copying text.
+
+### Warm-up improvements (CMP-FEAT-098 / CMP-UX-099 / CMP-UX-100 / CMP-UX-101)
+- Daily Check-In separates **went to bed / tried to sleep** from **actually fell asleep**, supports additional wake-up times, and records optional quantities for selected pre-bed substances.
+- Medication and workplace-arrival checkboxes now reveal their time fields immediately instead of requiring an intermediate Save / Update.
+- Morning rituals include **Bodyweight / home workout**.
+- Check-in history removes redundant row-number columns and loads previous check-ins progressively in batches of five.
+- Previous activity history is grouped into separate day clusters and can reveal five additional historical days at a time.

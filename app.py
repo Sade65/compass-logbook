@@ -1,4 +1,5 @@
 from os import path
+import json
 import streamlit as st
 import pandas as pd
 from pathlib import Path
@@ -370,9 +371,14 @@ def get_checkin_for_date(checkin_date: date) -> dict:
 
     empty_checkin = {
         "date": date_str,
+        "went_to_bed_at": "",
         "wake_up_time": "",
+        "additional_wake_times": "",
         "got_out_of_bed_at": "",
         "slept_at": "",
+        "prebed_rituals": "",
+        "prebed_amounts": "",
+        "sleep_note": "",
         "medication_taken": False,
         "morning_rituals": "",
         "morning_ritual_custom": "",
@@ -463,11 +469,11 @@ def build_checkin_display_table(df: pd.DataFrame) -> pd.DataFrame:
     """Create a compact, human-readable recent check-in table."""
     display_df = df.copy()
 
-    display_df["#"] = range(1, len(display_df) + 1)
     display_df["Date"] = pd.to_datetime(
         display_df.get("date", ""), errors="coerce"
     ).dt.strftime("%d.%m.%y")
 
+    display_df["Bed"] = display_df.get("went_to_bed_at", "").apply(format_time_or_missing)
     display_df["Sleep"] = display_df.get("slept_at", "").apply(format_time_or_missing)
     display_df["Wake"] = display_df.get("wake_up_time", "").apply(format_time_or_missing)
     display_df["Got up"] = display_df.get("got_out_of_bed_at", "").apply(format_time_or_missing)
@@ -489,8 +495,8 @@ def build_checkin_display_table(df: pd.DataFrame) -> pd.DataFrame:
     display_df["Focus"] = display_df.get("main_focus", "").replace({"None": "—", "nan": "—"})
 
     columns = [
-        "#",
         "Date",
+        "Bed",
         "Sleep",
         "Wake",
         "Got up",
@@ -502,6 +508,28 @@ def build_checkin_display_table(df: pd.DataFrame) -> pd.DataFrame:
         "Focus",
     ]
     return display_df[[c for c in columns if c in display_df.columns]]
+
+
+def parse_prebed_amounts(value) -> dict[str, str]:
+    """Read flexible pre-bed substance quantities stored as JSON in the CSV MVP."""
+    if value is None or pd.isna(value):
+        return {}
+    text = str(value).strip()
+    if text in ["", "None", "nan"]:
+        return {}
+    try:
+        parsed = json.loads(text)
+        return {str(k): str(v) for k, v in parsed.items() if str(v).strip()} if isinstance(parsed, dict) else {}
+    except (json.JSONDecodeError, TypeError):
+        return {}
+
+
+def valid_time_list(value: str) -> bool:
+    """Validate an optional comma-separated list of HH:MM values."""
+    text = str(value or "").strip()
+    if not text:
+        return True
+    return all(is_valid_time_text(item.strip()) and item.strip() for item in text.split(","))
 
 
 def split_csv_text(value: str) -> list[str]:
@@ -920,137 +948,162 @@ elif page == "Daily Check-In":
         "One editable daily summary per date. Save partial notes now and update the same day later."
     )
 
-    with st.form("daily_checkin_form"):
-        st.subheader("Sleep")
+    st.subheader("Sleep")
 
-        slept_at = st.text_input(
-            "Slept last night at (HH:MM, optional)",
-            value=normalize_time_text(existing_checkin.get("slept_at", "")),
-            placeholder="e.g. 02:30",
+    went_to_bed_at = st.text_input(
+        "Went to bed / tried to sleep at (HH:MM, optional)",
+        value=normalize_time_text(existing_checkin.get("went_to_bed_at", "")),
+        placeholder="e.g. 01:10",
+        help="When you decided to try to sleep; separate from when you actually fell asleep.",
+    )
+
+    slept_at = st.text_input(
+        "Actually fell asleep at (HH:MM, optional)",
+        value=normalize_time_text(existing_checkin.get("slept_at", "")),
+        placeholder="e.g. 01:30",
+    )
+
+    wake_up = st.text_input(
+        "First woke up at (HH:MM, optional)",
+        value=normalize_time_text(existing_checkin.get("wake_up_time", "")),
+        placeholder="e.g. 08:30",
+    )
+
+    log_extra_wakes = st.checkbox(
+        "Register additional wake-up(s)",
+        value=bool(str(existing_checkin.get("additional_wake_times", "") or "").strip()),
+    )
+    additional_wake_times = ""
+    if log_extra_wakes:
+        additional_wake_times = st.text_input(
+            "Additional wake times (HH:MM, comma separated)",
+            value=str(existing_checkin.get("additional_wake_times", "") or ""),
+            placeholder="e.g. 04:20, 06:10",
         )
 
-        wake_up = st.text_input(
-            "First woke up at (HH:MM, optional)",
-            value=normalize_time_text(existing_checkin.get("wake_up_time", "")),
-            placeholder="e.g. 09:30",
+    got_out_of_bed_at = st.text_input(
+        "Got out of bed / day started at (HH:MM, optional)",
+        value=normalize_time_text(existing_checkin.get("got_out_of_bed_at", "")),
+        placeholder="e.g. 08:50",
+    )
+
+    with st.expander("Optional pre-bed / sleep ritual details"):
+        prebed_rituals = st.multiselect(
+            "Pre-bed rituals",
+            [
+                "Meditation",
+                "Magnesium",
+                "Ashwagandha",
+                "CBD",
+                "Melatonin",
+                "Reading",
+                "No phone before bed",
+                "Stretching",
+                "Other",
+            ],
+            default=split_csv_text(existing_checkin.get("prebed_rituals", "")),
         )
-
-        got_out_of_bed_at = st.text_input(
-            "Got out of bed / day started at (HH:MM, optional)",
-            value=normalize_time_text(existing_checkin.get("got_out_of_bed_at", "")),
-            placeholder="e.g. 11:10",
-        )   
-
-        with st.expander("Optional pre-bed / sleep ritual notes"):
-            prebed_rituals = st.multiselect(
-                "Pre-bed rituals",
-                [
-                    "Meditation",
-                    "Magnesium",
-                    "Ashwagandha",
-                    "CBD",
-                    "Melatonin",
-                    "Reading",
-                    "No phone before bed",
-                    "Other",
-                ],
-                default=[],
-            )
-            sleep_note = st.text_area(
-                "Sleep notes",
-                placeholder="e.g. woke up for WC, slept again, restless night",
-            )
-
-        st.subheader("Morning state")
-
-        mood = st.slider(
-            "Mood upon waking",
-            1,
-            5,
-            int(existing_checkin.get("mood", 3)),
-        )
-
-        energy = st.slider(
-            "Energy upon waking",
-            1,
-            5,
-            int(existing_checkin.get("energy", 3)),
-        )
-
-        st.subheader("Medication")
-
-        medication_taken = st.checkbox(
-            "Took medication today",
-            value=bool(existing_checkin.get("medication_taken", False)),
-        )
-
-        medication_at = ""
-
-        if medication_taken:
-            medication_at = st.text_input(
-                "Medication taken at (HH:MM)",
-                value=normalize_time_text(existing_checkin.get("medication_at", "")),
-                placeholder="e.g. 09:15",
-            )
-
-            st.subheader("Morning ritual")
-
-            morning_rituals = st.multiselect(
-                "Did you do any morning rituals?",
-                [
-                    "Meditation",
-                    "Stretching",
-                    "Breathwork",
-                    "Sunlight / walk",
-                    "Journaling",
-                    "Reading",
-                    "Other",
-                ],
-                default=split_csv_text(existing_checkin.get("morning_rituals", "")),
-            )
-
-            morning_ritual_custom = ""
-
-            if "Other" in morning_rituals:
-                morning_ritual_custom = st.text_input(
-                    "Custom morning ritual",
-                    value=str(existing_checkin.get("morning_ritual_custom", "") or ""),
-                    placeholder="e.g. cold shower, mobility, prayer, language practice",
+        saved_amounts = parse_prebed_amounts(existing_checkin.get("prebed_amounts", ""))
+        prebed_amounts = {}
+        for substance in ["Melatonin", "Magnesium", "Ashwagandha", "CBD"]:
+            if substance in prebed_rituals:
+                amount = st.text_input(
+                    f"{substance} amount (optional)",
+                    value=saved_amounts.get(substance, ""),
+                    placeholder="e.g. 1.8 mg, 3 g, 10 drops",
+                    key=f"prebed_amount_{selected_date.isoformat()}_{substance}",
                 )
+                if amount.strip():
+                    prebed_amounts[substance] = amount.strip()
 
-        st.subheader("Arrival / Workday start")
-
-        arrived_logged = st.checkbox(
-            "Arrived at library/workplace",
-            value=bool(normalize_time_text(existing_checkin.get("arrived_at", ""))),
+        sleep_note = st.text_area(
+            "Sleep notes",
+            value=str(existing_checkin.get("sleep_note", "") or ""),
+            placeholder="e.g. woke up for WC, slept again, restless night",
         )
 
-        arrived_at = ""
+    st.subheader("Morning state")
 
-        if arrived_logged:
-            arrived_at = st.text_input(
-                "Arrived at (HH:MM)",
-                value=normalize_time_text(existing_checkin.get("arrived_at", "")),
-                placeholder="e.g. 15:15",
-            )
+    mood = st.slider(
+        "Mood upon waking",
+        1,
+        5,
+        int(existing_checkin.get("mood", 3)),
+    )
 
-        st.subheader("Day orientation")
+    energy = st.slider(
+        "Energy upon waking",
+        1,
+        5,
+        int(existing_checkin.get("energy", 3)),
+    )
 
-        main_focus = st.text_input(
-            "Main focus today",
-            value=str(existing_checkin.get("main_focus", "") or ""),
+    st.subheader("Medication")
+    medication_taken = st.checkbox(
+        "Took medication today",
+        value=bool(existing_checkin.get("medication_taken", False)),
+    )
+    medication_at = ""
+    if medication_taken:
+        medication_at = st.text_input(
+            "Medication taken at (HH:MM)",
+            value=normalize_time_text(existing_checkin.get("medication_at", "")),
+            placeholder="e.g. 09:15",
         )
 
-        notes = st.text_area(
-            "Notes",
-            value=str(existing_checkin.get("notes", "") or ""),
+    st.subheader("Morning ritual")
+    morning_rituals = st.multiselect(
+        "Did you do any morning rituals?",
+        [
+            "Meditation",
+            "Stretching",
+            "Breathwork",
+            "Bodyweight / home workout",
+            "Sunlight / walk",
+            "Journaling",
+            "Reading",
+            "Other",
+        ],
+        default=split_csv_text(existing_checkin.get("morning_rituals", "")),
+    )
+
+    morning_ritual_custom = ""
+    if "Other" in morning_rituals:
+        morning_ritual_custom = st.text_input(
+            "Custom morning ritual",
+            value=str(existing_checkin.get("morning_ritual_custom", "") or ""),
+            placeholder="e.g. cold shower, mobility, prayer, language practice",
         )
 
-        submitted = st.form_submit_button("Save / Update Daily Check-In")
+    st.subheader("Arrival / Workday start")
+    arrived_logged = st.checkbox(
+        "Arrived at library/workplace",
+        value=bool(normalize_time_text(existing_checkin.get("arrived_at", ""))),
+    )
+    arrived_at = ""
+    if arrived_logged:
+        arrived_at = st.text_input(
+            "Arrived at (HH:MM)",
+            value=normalize_time_text(existing_checkin.get("arrived_at", "")),
+            placeholder="e.g. 15:15",
+        )
+
+    st.subheader("Day orientation")
+    main_focus = st.text_input(
+        "Main focus today",
+        value=str(existing_checkin.get("main_focus", "") or ""),
+    )
+    notes = st.text_area(
+        "Notes",
+        value=str(existing_checkin.get("notes", "") or ""),
+    )
+
+    submitted = st.button("Save / Update Daily Check-In", type="primary")
 
     if submitted:
         time_fields = {
-            "Slept last night at": slept_at,
+            "Went to bed at": went_to_bed_at,
+            "Actually fell asleep at": slept_at,
             "First woke up at": wake_up,
             "Got out of bed at": got_out_of_bed_at,
             "Medication taken at": medication_at,
@@ -1060,6 +1113,8 @@ elif page == "Daily Check-In":
         invalid_fields = [
             label for label, value in time_fields.items() if not is_valid_time_text(value)
         ]
+        if not valid_time_list(additional_wake_times):
+            invalid_fields.append("Additional wake times")
 
         if invalid_fields:
             st.error(
@@ -1069,7 +1124,6 @@ elif page == "Daily Check-In":
             )
         else:
             now = datetime.now().isoformat(timespec="seconds")
-
             created_at = existing_checkin.get("created_at", "")
             if not created_at or created_at == "None":
                 created_at = now
@@ -1077,10 +1131,13 @@ elif page == "Daily Check-In":
             save_daily_checkin(
                 {
                     "date": selected_date.isoformat(),
+                    "went_to_bed_at": normalize_time_text(went_to_bed_at),
                     "wake_up_time": normalize_time_text(wake_up),
+                    "additional_wake_times": additional_wake_times.strip() if log_extra_wakes else "",
                     "got_out_of_bed_at": normalize_time_text(got_out_of_bed_at),
                     "slept_at": normalize_time_text(slept_at),
                     "prebed_rituals": ", ".join(prebed_rituals),
+                    "prebed_amounts": json.dumps(prebed_amounts, ensure_ascii=False),
                     "sleep_note": sleep_note,
                     "medication_taken": medication_taken,
                     "medication_at": normalize_time_text(medication_at) if medication_taken else "",
@@ -1102,15 +1159,14 @@ elif page == "Daily Check-In":
     current_checkins = get_current_checkins()
 
     if not current_checkins.empty:
-        today_str = selected_date.isoformat()
-        today_rows = current_checkins[current_checkins["date"] == today_str]
+        selected_date_str = selected_date.isoformat()
+        selected_rows = current_checkins[current_checkins["date"] == selected_date_str]
 
-        if not today_rows.empty:
+        if not selected_rows.empty:
             st.subheader("Selected Day Summary")
-            selected = today_rows.iloc[0]
+            selected = selected_rows.iloc[0]
 
             col1, col2, col3, col4, col5 = st.columns(5)
-
             col1.metric("First wake", format_time_or_missing(selected.get("wake_up_time", "")))
             col2.metric("Got up", format_time_or_missing(selected.get("got_out_of_bed_at", "")))
             col3.metric("Medication", format_time_or_missing(selected.get("medication_at", "")))
@@ -1121,46 +1177,57 @@ elif page == "Daily Check-In":
                 selected.get("slept_at", ""),
                 selected.get("got_out_of_bed_at", "") or selected.get("wake_up_time", ""),
             )
-
             if sleep_total:
                 st.caption(f"Sleep window: {sleep_total}")
 
-            st.caption(f"Last updated: {format_short_datetime(selected.get('updated_at', selected.get('created_at', '')))}")
+            bed_time = normalize_time_text(selected.get("went_to_bed_at", ""))
+            if bed_time:
+                st.caption(f"Went to bed: {bed_time} · Fell asleep: {format_time_or_missing(selected.get('slept_at', ''))}")
+            if str(selected.get("additional_wake_times", "") or "").strip():
+                st.caption(f"Additional wake-ups: {selected.get('additional_wake_times')}")
+
+            st.caption(
+                f"Last updated: {format_short_datetime(selected.get('updated_at', selected.get('created_at', '')))}"
+            )
 
             ritual_summary = selected.get("morning_rituals", "")
-
             if selected.get("morning_ritual_custom", ""):
                 ritual_summary = f"{ritual_summary}, {selected.get('morning_ritual_custom', '')}".strip(", ")
-
             if ritual_summary:
                 st.caption(f"Morning ritual: {ritual_summary}")
 
-            st.write("Current saved record for this day:")  
+            prebed_amount_summary = parse_prebed_amounts(selected.get("prebed_amounts", ""))
+            if prebed_amount_summary:
+                st.caption(
+                    "Pre-bed amounts: "
+                    + " · ".join(f"{name} {amount}" for name, amount in prebed_amount_summary.items())
+                )
+
+            st.write("Current saved record for this day:")
             st.dataframe(
-                build_checkin_display_table(today_rows),
+                build_checkin_display_table(selected_rows),
                 use_container_width=True,
+                hide_index=True,
             )
 
-        st.subheader("Last 5 days of Check-Ins")
+        st.subheader("Check-In History")
+        previous = current_checkins[current_checkins["date"] != selected_date_str].copy()
+        history_limit = int(st.session_state.get("checkin_history_limit", 5))
+        visible_previous = previous.head(history_limit)
 
-        previous = current_checkins[current_checkins["date"] != selected_date.isoformat()]
-        recent_previous = previous.head(5)
-        older_previous = previous.iloc[5:]
-
-        if not recent_previous.empty:
+        if not visible_previous.empty:
+            st.caption(f"Showing {len(visible_previous)} most recent previous check-in(s).")
             st.dataframe(
-                build_checkin_display_table(recent_previous),
+                build_checkin_display_table(visible_previous),
                 use_container_width=True,
+                hide_index=True,
             )
+            if len(previous) > history_limit:
+                if st.button("Show 5 older check-ins", key="show_older_checkins"):
+                    st.session_state.checkin_history_limit = history_limit + 5
+                    st.rerun()
         else:
             st.info("No previous check-ins yet.")
-
-        if not older_previous.empty:
-            with st.expander("Show older check-ins"):
-                st.dataframe(
-                    build_checkin_display_table(older_previous),
-                    use_container_width=True,
-                )
 
 elif page == "Todos":
     st.header("Todos")
@@ -1456,25 +1523,39 @@ elif page == "Todos":
         else:
             st.info("No activity sessions logged today yet.")
 
-        st.subheader("Recent Activity · Previous 5 Days")
-        recent_start = today - pd.Timedelta(days=5)
-        recent_logs = logs_df[(log_dates >= recent_start) & (log_dates < today)].copy()
-        if not recent_logs.empty:
-            recent_logs = number_activity_rows(recent_logs)
-            recent_logs = recent_logs.sort_values("_rank_start", ascending=False).head(30)
-            recent_display = build_activity_log_display(recent_logs, todos_lookup)
-            st.dataframe(
-                recent_display,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "#": st.column_config.NumberColumn("#", format="%d"),
-                    "Planned": st.column_config.NumberColumn("Planned", format="%d min"),
-                    "Actual": st.column_config.NumberColumn("Actual", format="%.1f min"),
-                },
-            )
+        st.subheader("Activity History by Day")
+        previous_logs = logs_df[log_dates < today].copy()
+        if not previous_logs.empty:
+            previous_logs["_date_dt"] = pd.to_datetime(previous_logs["date"], errors="coerce")
+            available_days = [
+                day for day in previous_logs["_date_dt"].dropna().dt.normalize().drop_duplicates().sort_values(ascending=False).tolist()
+            ]
+            day_limit = int(st.session_state.get("activity_history_days_limit", 5))
+            visible_days = available_days[:day_limit]
+
+            for day_value in visible_days:
+                day_logs = previous_logs[previous_logs["_date_dt"].dt.normalize() == day_value].copy()
+                day_logs = number_activity_rows(day_logs)
+                day_logs = day_logs.sort_values("_rank_start", ascending=False)
+                day_display = build_activity_log_display(day_logs, todos_lookup, include_date=False)
+                st.markdown(f"**{day_value.strftime('%A · %d.%m.%y')}**")
+                st.dataframe(
+                    day_display,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "#": st.column_config.NumberColumn("#", format="%d"),
+                        "Planned": st.column_config.NumberColumn("Planned", format="%d min"),
+                        "Actual": st.column_config.NumberColumn("Actual", format="%.1f min"),
+                    },
+                )
+
+            if len(available_days) > day_limit:
+                if st.button("Show 5 older activity days", key="show_older_activity_days"):
+                    st.session_state.activity_history_days_limit = day_limit + 5
+                    st.rerun()
         else:
-            st.caption("No activity sessions in the previous 5 days.")
+            st.caption("No activity sessions from previous days yet.")
 
         with st.expander("Correct logged time"):
             st.caption(

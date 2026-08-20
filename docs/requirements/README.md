@@ -80,3 +80,10 @@ Example commit:
 ```text
 fix(timer): persist and recover active sessions [CMP-FIX-001]
 ```
+| CMP-FEAT-098 | Sleep Detail & Ritual Quantities | Feature | P1 | Verification | v0.2.x |
+| CMP-UX-099 | Reactive Daily Check-In Controls | UX | P0 | Verification | v0.2.x |
+| CMP-UX-100 | Progressive Check-In History | UX | P1 | Verification | v0.2.x |
+| CMP-UX-101 | Activity History Day Clusters | UX | P1 | Verification | v0.2.x |
+| CMP-FEAT-102 | Todo Day Navigator | Feature / UX | P1 | Planned | v0.2.x |
+| CMP-FEAT-103 | Todo Pause / Edit / Archive State Model | Feature / Architecture | P0 | Planned | v0.2.x |
+| CMP-FEAT-104 | Inline Editable Quick Break Timing | Feature / UX | P1 | Planned | v0.2.x |
