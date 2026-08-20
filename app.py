@@ -465,6 +465,12 @@ def get_current_checkins() -> pd.DataFrame:
     return df
 
 
+def optional_formatted_column(df, column, formatter, default="Not logged"):
+    if column in df.columns:
+        return df[column].apply(formatter)
+    return pd.Series([default] * len(df), index=df.index)
+
+
 def build_checkin_display_table(df: pd.DataFrame) -> pd.DataFrame:
     """Create a compact, human-readable recent check-in table."""
     display_df = df.copy()
@@ -473,7 +479,12 @@ def build_checkin_display_table(df: pd.DataFrame) -> pd.DataFrame:
         display_df.get("date", ""), errors="coerce"
     ).dt.strftime("%d.%m.%y")
 
-    display_df["Bed"] = display_df.get("went_to_bed_at", "").apply(format_time_or_missing)
+    display_df["Bed"] = optional_formatted_column(
+    display_df,
+    "went_to_bed_at",
+    format_time_or_missing,
+    )
+
     display_df["Sleep"] = display_df.get("slept_at", "").apply(format_time_or_missing)
     display_df["Wake"] = display_df.get("wake_up_time", "").apply(format_time_or_missing)
     display_df["Got up"] = display_df.get("got_out_of_bed_at", "").apply(format_time_or_missing)
