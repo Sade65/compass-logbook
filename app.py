@@ -2,6 +2,7 @@ from os import path
 import json
 import streamlit as st
 import pandas as pd
+import plotly.express as px
 from pathlib import Path
 from datetime import datetime, date, time, timedelta
 
@@ -619,6 +620,128 @@ def format_session_duration(minutes_value) -> str:
             return f"{hours}h {minutes:02d}m"
         return f"{hours}h {minutes:02d}m {seconds:02d}s"
     return f"{minutes}m {seconds:02d}s"
+
+
+def render_daily_flow_bar() -> None:
+    """Render a compact one-line timeline of today's logged activity sessions."""
+    logs_df = load_csv(ACTIVITY_LOGS_FILE)
+    rows: list[dict] = []
+
+    if not logs_df.empty and {"date", "start_time", "end_time"}.issubset(logs_df.columns):
+        today_mask = pd.to_datetime(logs_df["date"], errors="coerce") == pd.Timestamp(get_today_str())
+        today_logs = logs_df[today_mask].copy()
+        for _, row in today_logs.iterrows():
+            start_dt = pd.to_datetime(row.get("start_time"), errors="coerce")
+            end_dt = pd.to_datetime(row.get("end_time"), errors="coerce")
+            if pd.isna(start_dt) or pd.isna(end_dt) or end_dt <= start_dt:
+                continue
+            rows.append(
+                {
+                    "Lane": "Today",
+                    "Start": start_dt,
+                    "End": end_dt,
+                    "Activity": activity_display_name(row.get("category", "Other")),
+                    "Task": str(row.get("task", "Activity")),
+                    "StartLabel": start_dt.strftime("%H:%M"),
+                    "EndLabel": end_dt.strftime("%H:%M"),
+                    "Duration": format_session_duration(row.get("duration_minutes", 0)),
+                    "Note": "" if pd.isna(row.get("note")) else str(row.get("note", "")),
+                    "State": "Completed",
+                }
+            )
+
+    active_timer = get_active_timer()
+    if active_timer is not None:
+        try:
+            active_start = pd.Timestamp(datetime.fromisoformat(active_timer["start_time"]))
+        except (KeyError, TypeError, ValueError):
+            active_start = pd.NaT
+        if pd.notna(active_start) and active_start.date() == date.today():
+            active_end = pd.Timestamp(datetime.now())
+            elapsed_minutes = max(0, (active_end - active_start).total_seconds() / 60)
+            rows.append(
+                {
+                    "Lane": "Today",
+                    "Start": active_start,
+                    "End": active_end,
+                    "Activity": activity_display_name(active_timer.get("activity_type", "Other")),
+                    "Task": str(active_timer.get("task", "Activity")),
+                    "StartLabel": active_start.strftime("%H:%M"),
+                    "EndLabel": "now",
+                    "Duration": format_session_duration(elapsed_minutes),
+                    "Note": "Running now",
+                    "State": "Running",
+                }
+            )
+
+    st.markdown("**Today's flow**")
+    if not rows:
+        st.caption("Your work and break blocks will appear here as you log them.")
+        return
+
+    flow_df = pd.DataFrame(rows).sort_values("Start")
+    color_map = {
+        "Break": "#F59E42",
+        "Development / Coding": "#5B8CFF",
+        "Communication": "#57C785",
+        "Studying": "#9B72E8",
+        "Job Applications": "#44B4C8",
+        "Admin": "#D7A24A",
+        "Other": "#7D8795",
+    }
+
+    fig = px.timeline(
+        flow_df,
+        x_start="Start",
+        x_end="End",
+        y="Lane",
+        color="Activity",
+        color_discrete_map=color_map,
+        custom_data=["Task", "Activity", "StartLabel", "EndLabel", "Duration", "Note", "State"],
+    )
+    fig.update_traces(
+        hovertemplate=(
+            "<b>%{customdata[0]}</b><br>"
+            "%{customdata[1]}<br>"
+            "%{customdata[2]} → %{customdata[3]}<br>"
+            "%{customdata[4]}<br>"
+            "%{customdata[6]}<br>"
+            "%{customdata[5]}<extra></extra>"
+        ),
+        marker_line_width=1,
+        marker_line_color="#0B0D10",
+    )
+    fig.update_layout(
+        height=150,
+        margin=dict(l=0, r=0, t=8, b=20),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#A6AEBA"),
+        legend=dict(
+            orientation="h",
+            yanchor="top",
+            y=-0.30,
+            xanchor="left",
+            x=0,
+            title=None,
+        ),
+        hoverlabel=dict(bgcolor="#171C24", font_color="#F4F6F8"),
+        xaxis=dict(
+            title=None,
+            tickformat="%H:%M",
+            showgrid=False,
+            zeroline=False,
+            rangeslider_visible=False,
+        ),
+        yaxis=dict(title=None, showticklabels=False, showgrid=False, zeroline=False),
+        bargap=0.08,
+    )
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        config={"displayModeBar": False, "responsive": True},
+        key="today_flow_bar",
+    )
 
 
 def build_todo_session_recaps(logs: pd.DataFrame) -> dict[str, dict]:
@@ -1257,6 +1380,8 @@ if page == "Dashboard":
             if sleep_total:
                 st.caption(f"Sleep window: {sleep_total}")
 
+            render_daily_flow_bar()
+
         else:
             st.info("No check-in saved for today yet.")
 
@@ -1735,6 +1860,8 @@ elif page == "Todos":
                     st.rerun()
 
     st.divider()
+    render_daily_flow_bar()
+
     st.subheader("Today's Todos")
     render_today_todos()
 

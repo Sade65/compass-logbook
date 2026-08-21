@@ -5,6 +5,7 @@ All notable Compass changes are documented here.
 ## [Unreleased]
 
 ### Added
+- CMP-ANL-107 adds a compact interactive Today Flow bar that places work, break, and task-switch sessions on one chronological horizontal timeline with hover details.
 - CMP-FEAT-105 puts first-class Quick Break capture directly on the Todos page; a Break is saved as its own activity/session with no Todo open/done semantics.
 - CMP-FEAT-016 / CMP-UX-017 add a Lifecycle subscription MVP with cost, calendar-aware recurrence, next-charge date, days remaining, cycle progress, and Renewed-now reset.
 - CMP-FEAT-019 adds opened consumable/perishable tracking with printed expiry, after-opening limits, expected lifespan, derived use-by date, and Finished/Discarded state changes.
@@ -15,6 +16,8 @@ All notable Compass changes are documented here.
 - CMP-FEAT-091 Quick Log can time a standalone Break and record an optional break-context note.
 - CMP-FEAT-035 per-session activity classification.
 - Formal requirement register, roadmap, architecture notes, and ADR process.
+
+- CMP-ANL-107 Daily Flow Bar is now surfaced on the Dashboard immediately below Today metrics as well as on the Todos page.
 
 ### Experimental
 - CMP-UX-092 corrects the Premium UI page/section heading hierarchy for evaluation.
