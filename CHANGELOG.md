@@ -5,6 +5,9 @@ All notable Compass changes are documented here.
 ## [Unreleased]
 
 ### Added
+- CMP-FEAT-105 puts first-class Quick Break capture directly on the Todos page; a Break is saved as its own activity/session with no Todo open/done semantics.
+- CMP-FEAT-016 / CMP-UX-017 add a Lifecycle subscription MVP with cost, calendar-aware recurrence, next-charge date, days remaining, cycle progress, and Renewed-now reset.
+- CMP-FEAT-019 adds opened consumable/perishable tracking with printed expiry, after-opening limits, expected lifespan, derived use-by date, and Finished/Discarded state changes.
 - CMP-FEAT-047 adds a dedicated **Log past activity** flow for work remembered after the fact, while keeping planned-vs-actual compatibility through a linked closed Todo internally.
 - CMP-FEAT-095 Todo cards surface the latest stop time and show the previous session duration when the same Todo is started again.
 - CMP-FEAT-096 logged session duration can be corrected manually with a numeric − / + control; Compass preserves the original start and recalculates the end time.

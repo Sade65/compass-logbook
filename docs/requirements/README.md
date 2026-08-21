@@ -30,10 +30,10 @@ This register gives every meaningful product, UX, reliability, data, integration
 | CMP-FEAT-013 | Lifecycle Replacement Tracker | Feature | P1 | Backlog | v0.3+ |
 | CMP-FEAT-014 | Lifecycle Alerts & Due-State UI | Feature | P1 | Backlog | v0.3+ |
 | CMP-ARCH-015 | Lifecycle-to-Todo Automation | Architecture | P1 | Backlog | v0.3+ |
-| CMP-FEAT-016 | Subscription & Contract Hub | Feature | P1 | Backlog | v0.3+ |
-| CMP-UX-017 | Subscription Visual Cards | UX | P2 | Backlog | v0.3+ |
+| CMP-FEAT-016 | Subscription & Contract Hub | Feature | P0 | Verification | v0.2.x |
+| CMP-UX-017 | Subscription Visual Cards | UX | P1 | Verification | v0.2.x |
 | CMP-FEAT-018 | Account / Contract Context | Feature | P2 | Backlog | v0.3+ |
-| CMP-FEAT-019 | Consumable Usage Tracker | Feature | P2 | Backlog | v0.3+ |
+| CMP-FEAT-019 | Consumable Usage Tracker | Feature | P0 | Verification | v0.2.x |
 | CMP-INTEG-020 | Health Data Ingestion | Integration | P1 | Backlog | v0.4+ |
 | CMP-INTEG-021 | WHOOP Data Integration | Integration | P2 | Backlog | v0.4+ |
 | CMP-DATA-022 | WHOOP CSV Importer | Data | P2 | Backlog | v0.4+ |
@@ -87,3 +87,5 @@ fix(timer): persist and recover active sessions [CMP-FIX-001]
 | CMP-FEAT-102 | Todo Day Navigator | Feature / UX | P1 | Planned | v0.2.x |
 | CMP-FEAT-103 | Todo Pause / Edit / Archive State Model | Feature / Architecture | P0 | Planned | v0.2.x |
 | CMP-FEAT-104 | Inline Editable Quick Break Timing | Feature / UX | P1 | Planned | v0.2.x |
+
+| CMP-FEAT-105 | Quick Break Capture on Todos | Feature / UX | P0 | Verification | v0.2.x |

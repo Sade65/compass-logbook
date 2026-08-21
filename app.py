@@ -6,6 +6,7 @@ from pathlib import Path
 from datetime import datetime, date, time, timedelta
 
 from compass_core.activity_records import build_retroactive_records, corrected_end_time
+from compass_core.lifecycle import blank_lifecycle_row, consumable_snapshot, subscription_snapshot
 from compass_core.runtime_state import (
     get_active_timer,
     get_pending_sessions,
@@ -198,6 +199,7 @@ ACTIVITY_LOGS_FILE = DATA_DIR / "activity_logs.csv"
 COUNTER_LOGS_FILE = DATA_DIR / "counter_logs.csv"
 
 CATEGORIES_FILE = DATA_DIR / "categories.csv"
+LIFECYCLE_FILE = DATA_DIR / "lifecycle_items.csv"
 
 def append_row(path: Path, row: dict) -> None:
     df = pd.DataFrame([row])
@@ -229,6 +231,24 @@ def load_csv(path: Path) -> pd.DataFrame:
 
 def generate_id(prefix: str) -> str:
     return f"{prefix}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+
+
+def update_row_by_id(path: Path, row_id: str, updates: dict, id_column: str = "id") -> bool:
+    """Update one persisted row without changing its immutable identifier."""
+    df = load_csv(path)
+    if df.empty or id_column not in df.columns:
+        return False
+
+    mask = df[id_column].astype(str) == str(row_id)
+    if not mask.any():
+        return False
+
+    for column, value in updates.items():
+        if column not in df.columns:
+            df[column] = ""
+        df.loc[mask, column] = value
+    df.to_csv(path, index=False)
+    return True
 
 
 def get_today_str() -> str:
@@ -870,9 +890,18 @@ def render_quick_break() -> None:
 
     if active_timer is not None:
         st.caption(
-            f"A timer is already running: {active_timer.get('task', 'Activity')}. "
-            "Break overlap is intentionally disabled until Pause/parallel timers are defined."
+            f"Current session: {active_timer.get('task', 'Activity')}. "
+            "Starting a break will stop that work session now; the Todo itself stays open."
         )
+        if st.button("Stop current & start break", use_container_width=False):
+            stop_timer()
+            start_timer(
+                todo_id="__quick_break__",
+                task="Break",
+                todo_category="Break",
+                activity_type="Break",
+            )
+            st.rerun()
         return
 
     if st.button("Start break", use_container_width=False):
@@ -885,6 +914,294 @@ def render_quick_break() -> None:
         st.rerun()
 
 
+
+def _clean_lifecycle_value(value):
+    if pd.isna(value):
+        return ""
+    return value
+
+
+def _lifecycle_row(kind: str, name: str, **values) -> dict:
+    row = blank_lifecycle_row()
+    now_iso = datetime.now().isoformat(timespec="seconds")
+    row.update(
+        {
+            "id": generate_id("life"),
+            "kind": kind,
+            "name": name.strip(),
+            "status": "active" if kind == "subscription" else "opened",
+            "created_at": now_iso,
+            "updated_at": now_iso,
+        }
+    )
+    row.update(values)
+    return row
+
+
+def render_subscription_cards(items: pd.DataFrame, *, compact: bool = False) -> None:
+    if items.empty:
+        if not compact:
+            st.info("No subscriptions tracked yet.")
+        return
+
+    rows = []
+    for _, raw in items.iterrows():
+        item = {key: _clean_lifecycle_value(value) for key, value in raw.to_dict().items()}
+        if not item.get("cycle_start"):
+            continue
+        try:
+            snap = subscription_snapshot(item)
+        except (ValueError, TypeError):
+            continue
+        rows.append((snap["next_charge"], item, snap))
+
+    rows.sort(key=lambda value: value[0])
+    if compact:
+        rows = rows[:3]
+
+    for _, item, snap in rows:
+        with st.container(border=True):
+            top1, top2 = st.columns([3.2, 1.2])
+            top1.markdown(f"**{item.get('name', 'Subscription')}**")
+            cost = item.get("cost", "")
+            currency = item.get("currency", "")
+            if cost not in ("", None):
+                try:
+                    cost_text = f"{float(cost):g} {currency}".strip()
+                except (TypeError, ValueError):
+                    cost_text = f"{cost} {currency}".strip()
+                top1.caption(
+                    f"{cost_text} · every {int(float(item.get('cycle_value', 1)))} "
+                    f"{str(item.get('cycle_unit', 'Months')).lower()}"
+                )
+            days = snap["days_remaining"]
+            top2.metric("Days left", days)
+            start_text = date.fromisoformat(str(item["cycle_start"])).strftime("%d.%m.%y")
+            next_text = snap["next_charge"].strftime("%d.%m.%y")
+            st.caption(f"Cycle {start_text} → {next_text} · next charge {next_text}")
+            st.progress(
+                snap["progress"],
+                text=f"{round(snap['progress'] * 100)}% of current billing cycle used",
+            )
+            note = str(item.get("note", "") or "").strip()
+            if note and note.lower() != "nan":
+                st.caption(note)
+            if not compact:
+                if st.button("Renewed now", key=f"renew_lifecycle_{item['id']}"):
+                    update_row_by_id(
+                        LIFECYCLE_FILE,
+                        str(item["id"]),
+                        {
+                            "cycle_start": date.today().isoformat(),
+                            "updated_at": datetime.now().isoformat(timespec="seconds"),
+                        },
+                    )
+                    st.rerun()
+
+
+def render_consumable_cards(items: pd.DataFrame, *, compact: bool = False) -> None:
+    if items.empty:
+        if not compact:
+            st.info("No open consumables tracked yet.")
+        return
+
+    rows = []
+    for _, raw in items.iterrows():
+        item = {key: _clean_lifecycle_value(value) for key, value in raw.to_dict().items()}
+        if not item.get("opened_at"):
+            continue
+        try:
+            snap = consumable_snapshot(item)
+        except (ValueError, TypeError):
+            continue
+        sort_date = snap["use_by"] or snap["expected_finish"] or date.max
+        rows.append((sort_date, item, snap))
+
+    rows.sort(key=lambda value: value[0])
+    if compact:
+        rows = rows[:3]
+
+    for _, item, snap in rows:
+        with st.container(border=True):
+            top1, top2 = st.columns([3.2, 1.2])
+            top1.markdown(f"**{item.get('name', 'Consumable')}**")
+            opened_dt = datetime.fromisoformat(str(item["opened_at"]))
+            top1.caption(
+                f"Opened {opened_dt.strftime('%d.%m.%y %H:%M')} · open {snap['opened_days']} day(s)"
+            )
+
+            target = snap["use_by"] or snap["expected_finish"]
+            if target is not None:
+                label = "Use by" if snap["use_by"] is not None else "Expected finish"
+                top2.metric("Days left", snap["days_remaining"])
+                st.caption(f"{label}: {target.strftime('%d.%m.%y')}")
+                if snap["progress"] is not None:
+                    st.progress(
+                        snap["progress"],
+                        text=f"{round(snap['progress'] * 100)}% of current open-life window used",
+                    )
+            else:
+                top2.metric("Open", f"{snap['opened_days']}d")
+                st.caption("No expiry/open-life target set yet.")
+
+            expiry = str(item.get("printed_expiry_date", "") or "").strip()
+            use_days = item.get("use_within_days", "")
+            details = []
+            if expiry and expiry.lower() != "nan":
+                try:
+                    details.append(f"printed expiry {date.fromisoformat(expiry).strftime('%d.%m.%y')}")
+                except ValueError:
+                    pass
+            try:
+                if int(float(use_days or 0)) > 0:
+                    details.append(f"use within {int(float(use_days))} days after opening")
+            except (TypeError, ValueError):
+                pass
+            if details:
+                st.caption(" · ".join(details))
+
+            note = str(item.get("note", "") or "").strip()
+            if note and note.lower() != "nan":
+                st.caption(note)
+
+            if not compact:
+                c1, c2 = st.columns([1, 1])
+                if c1.button("Finished now", key=f"finish_lifecycle_{item['id']}"):
+                    now_iso = datetime.now().isoformat(timespec="seconds")
+                    update_row_by_id(
+                        LIFECYCLE_FILE,
+                        str(item["id"]),
+                        {"status": "finished", "finished_at": now_iso, "updated_at": now_iso},
+                    )
+                    st.rerun()
+                if c2.button("Discarded", key=f"discard_lifecycle_{item['id']}"):
+                    now_iso = datetime.now().isoformat(timespec="seconds")
+                    update_row_by_id(
+                        LIFECYCLE_FILE,
+                        str(item["id"]),
+                        {"status": "discarded", "finished_at": now_iso, "updated_at": now_iso},
+                    )
+                    st.rerun()
+
+
+def render_lifecycle_overview(*, compact: bool = False) -> None:
+    items = load_csv(LIFECYCLE_FILE)
+    if items.empty:
+        if not compact:
+            st.info("No lifecycle items yet. Add Claude, milk, coffee, or another recurring item below.")
+        return
+
+    status = items.get("status", pd.Series(index=items.index, dtype=str)).astype(str)
+    active = items[~status.isin(["finished", "discarded", "archived"])].copy()
+    subscriptions = active[active.get("kind", "").astype(str) == "subscription"] if "kind" in active.columns else pd.DataFrame()
+    consumables = active[active.get("kind", "").astype(str) == "consumable"] if "kind" in active.columns else pd.DataFrame()
+
+    if compact:
+        render_subscription_cards(subscriptions, compact=True)
+        render_consumable_cards(consumables, compact=True)
+    else:
+        if not subscriptions.empty:
+            st.markdown("#### Active subscriptions")
+            render_subscription_cards(subscriptions)
+        if not consumables.empty:
+            st.markdown("#### Open consumables")
+            render_consumable_cards(consumables)
+
+
+def render_lifecycle_page() -> None:
+    st.header("Lifecycle")
+    st.caption("Keep recurring payments and opened consumables visible while their clocks are running.")
+
+    render_lifecycle_overview()
+    st.divider()
+
+    subscription_tab, consumable_tab = st.tabs(["Add subscription", "Add consumable"])
+
+    with subscription_tab:
+        with st.form("add_subscription_form", clear_on_submit=True):
+            name = st.text_input("Name", placeholder="e.g. Claude Pro")
+            c1, c2 = st.columns(2)
+            cost = c1.number_input("Cost", min_value=0.0, value=0.0, step=1.0)
+            currency = c2.selectbox("Currency", ["EUR", "USD", "GBP", "IRR", "Toman"])
+            cycle_start = st.date_input("Renewed / cycle started", value=date.today(), format="DD.MM.YYYY")
+            c3, c4 = st.columns(2)
+            cycle_value = c3.number_input("Recurring every", min_value=1, value=1, step=1)
+            cycle_unit = c4.selectbox("Unit", ["Months", "Weeks", "Days", "Years"])
+            c5, c6 = st.columns(2)
+            reminder_days = c5.number_input("Remind me this many days before", min_value=0, value=3, step=1)
+            auto_renew = c6.checkbox("Auto-renews", value=True)
+            note = st.text_area("Notes", placeholder="Optional contract/account context")
+            submitted = st.form_submit_button("Add subscription")
+
+        if submitted:
+            if not name.strip():
+                st.warning("Please enter a subscription name.")
+            else:
+                row = _lifecycle_row(
+                    "subscription",
+                    name,
+                    cost=float(cost),
+                    currency=currency,
+                    cycle_value=int(cycle_value),
+                    cycle_unit=cycle_unit,
+                    cycle_start=cycle_start.isoformat(),
+                    reminder_days=int(reminder_days),
+                    auto_renew=bool(auto_renew),
+                    note=note.strip(),
+                )
+                append_row(LIFECYCLE_FILE, row)
+                st.success(f"{name.strip()} added ✓")
+                st.rerun()
+
+    with consumable_tab:
+        with st.form("add_consumable_form", clear_on_submit=True):
+            name = st.text_input("Name", placeholder="e.g. Milk carton or Lavazza coffee beans", key="consumable_name")
+            c1, c2 = st.columns(2)
+            opened_date = c1.date_input("Opened date", value=date.today(), format="DD.MM.YYYY")
+            opened_time = c2.time_input("Opened time", value=datetime.now().time().replace(second=0, microsecond=0), step=60)
+            has_expiry = st.checkbox("Printed expiry date applies")
+            printed_expiry = st.date_input(
+                "Printed expiry date",
+                value=date.today() + timedelta(days=7),
+                format="DD.MM.YYYY",
+                help="Ignored unless the checkbox above is selected.",
+            )
+            c3, c4 = st.columns(2)
+            use_within_days = c3.number_input(
+                "Use within N days after opening",
+                min_value=0,
+                value=0,
+                step=1,
+                help="Use 0 if no after-opening limit applies.",
+            )
+            expected_lifespan = c4.number_input(
+                "Expected lifespan (days)",
+                min_value=0,
+                value=0,
+                step=1,
+                help="Useful for coffee or household stock; 0 means learn it from Finished later.",
+            )
+            note = st.text_area("Notes", placeholder="Brand, size, storage, etc.", key="consumable_note")
+            submitted = st.form_submit_button("Add opened consumable")
+
+        if submitted:
+            if not name.strip():
+                st.warning("Please enter an item name.")
+            else:
+                opened_at = datetime.combine(opened_date, opened_time)
+                row = _lifecycle_row(
+                    "consumable",
+                    name,
+                    opened_at=opened_at.isoformat(timespec="seconds"),
+                    printed_expiry_date=printed_expiry.isoformat() if has_expiry else "",
+                    use_within_days=int(use_within_days),
+                    expected_lifespan_days=int(expected_lifespan),
+                    note=note.strip(),
+                )
+                append_row(LIFECYCLE_FILE, row)
+                st.success(f"{name.strip()} opened lifecycle started ✓")
+                st.rerun()
+
 st.sidebar.title("Compass")
 
 page = st.sidebar.radio(
@@ -894,7 +1211,7 @@ page = st.sidebar.radio(
         "Daily Check-In",
         "Todos",
         "Quick Log",
-        "Maintenance",
+        "Lifecycle",
         "Analytics",
         "Export",
     ],
@@ -948,6 +1265,11 @@ if page == "Dashboard":
         st.dataframe(recent_display, use_container_width=True, hide_index=True)
     else:
         st.info("No check-ins yet. Add one in Daily Check-In.")
+
+    lifecycle_items = load_csv(LIFECYCLE_FILE)
+    if not lifecycle_items.empty:
+        st.subheader("Lifecycle watch")
+        render_lifecycle_overview(compact=True)
 
 elif page == "Daily Check-In":
     st.header("Daily Check-In")
@@ -1246,6 +1568,11 @@ elif page == "Todos":
         f"<div class='cmp-page-date'>{date.today().strftime('%A, %d %B')}</div>",
         unsafe_allow_html=True,
     )
+
+    with st.container(border=True):
+        st.markdown("**Quick break**")
+        st.caption("Log a standalone break without creating a Break Todo.")
+        render_quick_break()
 
     st.subheader("New todo")
 
@@ -1705,9 +2032,8 @@ elif page == "Quick Log":
                 use_container_width=True,
             )
 
-elif page == "Maintenance":
-    st.header("Maintenance")
-    st.write("Next: toothbrush, contact lenses, water filter, and haircut freshness trackers.")
+elif page == "Lifecycle":
+    render_lifecycle_page()
 
 elif page == "Analytics":
     st.header("Analytics")
